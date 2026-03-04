@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ import { agentService } from '@/services/agentService';
 import { AgentWithRelations } from '@/types/agent';
 import { Bot, RefreshCw, Layers, Database, ChevronRight } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
+import { supabase } from '@/integrations/supabase/client';
 
 interface LeadDetailDialogProps {
   lead: Lead | null;
@@ -35,12 +36,19 @@ const LeadDetailDialog = ({ lead, isOpen, onClose, onSave, onOpenWhatsApp }: Lea
   const [editData, setEditData] = useState<Partial<Lead>>({});
   const [agents, setAgents] = useState<AgentWithRelations[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
+  const [liveCollectedVars, setLiveCollectedVars] = useState<Record<string, any> | null>(null);
+  const [liveStageId, setLiveStageId] = useState<string | null | undefined>(undefined);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
       fetchAgents();
+      refreshLeadAiData();
+    } else {
+      setLiveCollectedVars(null);
+      setLiveStageId(undefined);
     }
-  }, [isOpen]);
+  }, [isOpen, lead?.id]);
 
   const fetchAgents = async () => {
     try {
@@ -53,6 +61,26 @@ const LeadDetailDialog = ({ lead, isOpen, onClose, onSave, onOpenWhatsApp }: Lea
       setIsLoadingAgents(false);
     }
   };
+
+  const refreshLeadAiData = useCallback(async () => {
+    if (!lead?.id) return;
+    try {
+      setIsRefreshing(true);
+      const { data } = await supabase
+        .from('leads')
+        .select('collected_variables, current_stage_id')
+        .eq('id', lead.id)
+        .single();
+      if (data) {
+        setLiveCollectedVars(data.collected_variables as Record<string, any> || {});
+        setLiveStageId(data.current_stage_id);
+      }
+    } catch (error) {
+      console.error('Error refreshing lead AI data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [lead?.id]);
 
   if (!lead) return null;
 
@@ -152,7 +180,7 @@ const LeadDetailDialog = ({ lead, isOpen, onClose, onSave, onOpenWhatsApp }: Lea
         </DialogHeader>
 
         <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="details">Informações Básicas</TabsTrigger>
             <TabsTrigger value="device">Dispositivo</TabsTrigger>
             <TabsTrigger value="utm">Parâmetros de URL</TabsTrigger>
@@ -440,11 +468,19 @@ const LeadDetailDialog = ({ lead, isOpen, onClose, onSave, onOpenWhatsApp }: Lea
           <TabsContent value="ai" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Bot className="w-5 h-5 text-primary" />
-                  Controle de Inteligência Artificial
-                </CardTitle>
-                <CardDescription>Gerencie o atendimento automatizado para este lead</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Bot className="w-5 h-5 text-primary" />
+                      Controle de Inteligência Artificial
+                    </CardTitle>
+                    <CardDescription>Gerencie o atendimento automatizado para este lead</CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={refreshLeadAiData} disabled={isRefreshing}>
+                    <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    Atualizar
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -500,14 +536,18 @@ const LeadDetailDialog = ({ lead, isOpen, onClose, onSave, onOpenWhatsApp }: Lea
                       </Select>
                     ) : (
                       <div className="flex items-center gap-2">
-                        {lead.current_stage_id ? (
-                          <Badge variant="outline" className="flex items-center gap-1">
-                            <ChevronRight className="w-3 h-3" />
-                            {(agents.find(a => a.id === lead.agent_id) as any)?.agent_stages?.find((s: any) => s.id === lead.current_stage_id)?.name || 'Etapa Definida'}
-                          </Badge>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Não iniciada</span>
-                        )}
+                        {(() => {
+                          const stageId = liveStageId !== undefined ? liveStageId : lead.current_stage_id;
+                          if (!stageId) return <span className="text-sm text-muted-foreground">Não iniciada</span>;
+                          const stageName = (agents.find(a => a.id === lead.agent_id) as any)
+                            ?.agent_stages?.find((s: any) => s.id === stageId)?.name;
+                          return (
+                            <Badge variant="outline" className="flex items-center gap-1">
+                              <ChevronRight className="w-3 h-3" />
+                              {stageName || 'Etapa Definida'}
+                            </Badge>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -521,18 +561,23 @@ const LeadDetailDialog = ({ lead, isOpen, onClose, onSave, onOpenWhatsApp }: Lea
                     <Database className="w-4 h-4" /> Dados Coletados pela IA
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {lead.collected_variables && Object.keys(lead.collected_variables).length > 0 ? (
-                      Object.entries(lead.collected_variables).map(([key, value]) => (
-                        <div key={key} className="p-3 bg-muted/30 rounded-lg border border-border/50 flex flex-col gap-1">
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">{key.replace(/_/g, ' ')}</span>
-                          <span className="text-sm font-medium">{String(value)}</span>
+                    {(() => {
+                      const vars = liveCollectedVars !== null ? liveCollectedVars : (lead.collected_variables as Record<string, any> || {});
+                      const entries = Object.entries(vars);
+                      if (entries.length > 0) {
+                        return entries.map(([key, value]) => (
+                          <div key={key} className="p-3 bg-muted/30 rounded-lg border border-border/50 flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase">{key.replace(/_/g, ' ')}</span>
+                            <span className="text-sm font-medium">{String(value)}</span>
+                          </div>
+                        ));
+                      }
+                      return (
+                        <div className="col-span-2 text-center py-6 border-2 border-dashed rounded-lg opacity-40">
+                          <p className="text-xs italic">Nenhum dado coletado ainda.</p>
                         </div>
-                      ))
-                    ) : (
-                      <div className="col-span-2 text-center py-6 border-2 border-dashed rounded-lg opacity-40">
-                        <p className="text-xs italic">Nenhum dado coletado ainda.</p>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               </CardContent>
