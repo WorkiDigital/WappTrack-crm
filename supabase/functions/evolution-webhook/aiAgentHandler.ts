@@ -78,11 +78,19 @@ export async function handleAgentLogic(params: {
             systemPrompt += `Critérios de sucesso: ${currentStage.success_criteria}\n\n`;
 
             if (currentStage.stage_variables && currentStage.stage_variables.length > 0) {
-                systemPrompt += `### DADOS QUE VOCÊ DEVE COLETAR NESTA ETAPA:\n`;
-                currentStage.stage_variables.forEach((v: any) => {
-                    systemPrompt += `- ${v.field_name}: ${v.description} (${v.is_required ? 'OBRIGATÓRIO' : 'Opcional'})\n`;
-                });
-                systemPrompt += `\n`;
+                const alreadyCollected = Object.keys(lead.collected_variables || {});
+                const pendingVars = currentStage.stage_variables.filter(
+                    (v: any) => !alreadyCollected.includes(v.field_name)
+                );
+                if (pendingVars.length > 0) {
+                    systemPrompt += `### DADOS QUE VOCÊ AINDA PRECISA COLETAR NESTA ETAPA:\n`;
+                    pendingVars.forEach((v: any) => {
+                        systemPrompt += `- ${v.field_name}: ${v.description} (${v.is_required ? 'OBRIGATÓRIO' : 'Opcional'})\n`;
+                    });
+                    systemPrompt += `\n`;
+                } else {
+                    systemPrompt += `### TODOS OS DADOS DESTA ETAPA JÁ FORAM COLETADOS.\n\n`;
+                }
             }
         }
 
@@ -138,19 +146,24 @@ export async function handleAgentLogic(params: {
             return;
         }
 
-        // Fetch conversation history (last 20 messages), EXCLUDING the current message
+        // Fetch conversation history (last 30 messages), EXCLUDING the current message
         // (processClientMessage already saved it to DB before this runs)
         const { data: history } = await supabase
             .from('lead_messages')
             .select('message_text, is_from_me, created_at')
             .eq('lead_id', lead.id)
             .order('created_at', { ascending: false })
-            .limit(21);
+            .limit(31);
 
-        // Filter out the current message to avoid duplication
+        // Filter out the current message to avoid duplication (normalize whitespace for comparison)
+        const normalizedCurrent = messageContent.trim().replace(/\s+/g, ' ');
         const filteredHistory = (history || [])
-            .filter((m: any) => !(m.is_from_me === false && m.message_text === messageContent))
-            .slice(0, 20)
+            .filter((m: any) => {
+                if (m.is_from_me) return true;
+                const normalizedMsg = (m.message_text || '').trim().replace(/\s+/g, ' ');
+                return normalizedMsg !== normalizedCurrent;
+            })
+            .slice(0, 30)
             .reverse();
 
         const messages = [
@@ -181,20 +194,39 @@ export async function handleAgentLogic(params: {
         }
 
         // Parse AI response for metadata
-        const shouldAdvance = aiResponse.includes('[AVANÇAR_ETAPA]');
-        const dataMatch = aiResponse.match(/\[DATA:(.*?)\]/);
+        const dataMatch = aiResponse.match(/\[DATA:([\s\S]*?)\]/);
         let extractedData: any = {};
         if (dataMatch) {
             try {
-                extractedData = JSON.parse(dataMatch[1]);
+                const parsed = JSON.parse(dataMatch[1]);
+                // Validate: only accept string values that are not obviously invalid
+                const invalidValues = ['confirmado', 'sim', 'não', 'nao', 'ok', 'não informado', 'nao informado', ''];
+                for (const [key, value] of Object.entries(parsed)) {
+                    const strVal = String(value).trim().toLowerCase();
+                    if (strVal && !invalidValues.includes(strVal)) {
+                        extractedData[key] = String(value).trim();
+                    }
+                }
             } catch (e) {
                 console.error("Failed to parse AI data JSON", e);
             }
         }
 
+        // Server-side validation before advancing stage
+        let shouldAdvance = aiResponse.includes('[AVANÇAR_ETAPA]');
+        if (shouldAdvance && currentStage) {
+            const requiredVars = (currentStage.stage_variables || []).filter((v: any) => v.is_required);
+            const mergedVars = { ...(lead.collected_variables || {}), ...extractedData };
+            const missingRequired = requiredVars.filter((v: any) => !mergedVars[v.field_name]);
+            if (missingRequired.length > 0) {
+                console.log(`⚠️ Blocking stage advance — missing required fields: ${missingRequired.map((v: any) => v.field_name).join(', ')}`);
+                shouldAdvance = false;
+            }
+        }
+
         const cleanResponse = aiResponse
             .replace('[AVANÇAR_ETAPA]', '')
-            .replace(/\[DATA:.*?\]/, '')
+            .replace(/\[DATA:[\s\S]*?\]/, '')
             .trim();
 
         // Send response via Evolution
@@ -311,7 +343,9 @@ async function callAnthropic(apiKey: string, model: string, systemPrompt: string
 }
 
 async function callGemini(apiKey: string, model: string, messages: any[]): Promise<string> {
-    // Convert messages to Gemini format
+    const systemMsg = messages.find((m: any) => m.role === 'system');
+
+    // Convert messages to Gemini format (exclude system role)
     const contents = messages
         .filter((m: any) => m.role !== 'system')
         .map((m: any) => ({
@@ -319,13 +353,13 @@ async function callGemini(apiKey: string, model: string, messages: any[]): Promi
             parts: [{ text: m.content }]
         }));
 
-    // Inject system prompt as first user turn if present
-    const systemMsg = messages.find((m: any) => m.role === 'system');
+    const body: any = { contents };
+
+    // Use systemInstruction (correct Gemini API field) instead of injecting as user turn
     if (systemMsg) {
-        contents.unshift(
-            { role: 'user', parts: [{ text: systemMsg.content }] },
-            { role: 'model', parts: [{ text: 'Entendido. Vou seguir essas instruções.' }] }
-        );
+        body.systemInstruction = {
+            parts: [{ text: systemMsg.content }]
+        };
     }
 
     const response = await fetch(
@@ -333,7 +367,7 @@ async function callGemini(apiKey: string, model: string, messages: any[]): Promi
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents })
+            body: JSON.stringify(body)
         }
     );
     if (!response.ok) throw new Error(`Gemini error: ${response.statusText}`);
