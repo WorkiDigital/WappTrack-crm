@@ -75,7 +75,16 @@ export async function handleAgentLogic(params: {
         if (currentStage) {
             systemPrompt += `### ETAPA ATUAL: ${currentStage.name}\n`;
             systemPrompt += `Objetivo desta etapa: ${currentStage.objective}\n`;
-            systemPrompt += `Critérios de sucesso: ${currentStage.success_criteria}\n\n`;
+            systemPrompt += `Critérios de sucesso (quando atingidos, inclua [AVANÇAR_ETAPA]): ${currentStage.success_criteria}\n`;
+
+            if (currentStage.stage_examples && currentStage.stage_examples.length > 0) {
+                systemPrompt += `\nExemplos de conversa para esta etapa:\n`;
+                currentStage.stage_examples.forEach((ex: any) => {
+                    if (ex.user_message) systemPrompt += `  Usuário: ${ex.user_message}\n`;
+                    if (ex.agent_response) systemPrompt += `  Você: ${ex.agent_response}\n`;
+                });
+            }
+            systemPrompt += `\n`;
 
             if (currentStage.stage_variables && currentStage.stage_variables.length > 0) {
                 const alreadyCollected = Object.keys(lead.collected_variables || {});
@@ -252,7 +261,7 @@ export async function handleAgentLogic(params: {
 
         if (shouldAdvance && currentStage) {
             const stages = [...(agent.stages || [])].sort((a: any, b: any) => a.stage_order - b.stage_order);
-            const nextStage = stages.find((s: any) => s.stage_order === currentStage.stage_order + 1);
+            const nextStage = stages.find((s: any) => s.stage_order > currentStage.stage_order);
 
             if (nextStage) {
                 updateData.current_stage_id = nextStage.id;
