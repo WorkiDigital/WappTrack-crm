@@ -132,13 +132,8 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
 
     // Example Handlers
     const handleAddExample = async (stageId: string) => {
-        if (!newExample.user_input || !newExample.agent_response) return;
+        if (!newExample.agent_response) return;
         try {
-            await agentService.createExample({
-                stage_id: stageId,
-                role: 'user',
-                message: newExample.user_input
-            });
             await agentService.createExample({
                 stage_id: stageId,
                 role: 'assistant',
@@ -350,18 +345,15 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
 
                                             <Separator className="my-4" />
 
-                                            <div className="space-y-4">
+                                            <div className="space-y-3">
                                                 <h4 className="font-semibold text-sm flex items-center gap-2">
-                                                    <MessageSquare className="h-4 w-4" /> Exemplos de Conversa
+                                                    <MessageSquare className="h-4 w-4" /> Exemplo de Resposta da IA
                                                 </h4>
                                                 <div className="space-y-2">
-                                                    {stage.stage_examples?.map((ex) => (
+                                                    {stage.stage_examples?.filter((ex: any) => ex.role === 'assistant').map((ex: any) => (
                                                         <div key={ex.id} className="p-2 border rounded-md bg-background">
                                                             <div className="flex items-start justify-between gap-2">
-                                                                <div className="flex-1">
-                                                                    <Badge variant="outline" className="mb-1">{ex.role}</Badge>
-                                                                    <p className="text-sm">{ex.message}</p>
-                                                                </div>
+                                                                <p className="text-sm flex-1">{ex.message}</p>
                                                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteExample(ex.id)}>
                                                                     <Trash2 className="h-4 w-4" />
                                                                 </Button>
@@ -371,22 +363,17 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                                 </div>
                                                 <div className="grid gap-2 p-2 border rounded-md bg-muted/20">
                                                     <Textarea
-                                                        placeholder="Mensagem do usuário"
-                                                        value={newExample.user_input}
-                                                        onChange={(e) => setNewExample({ ...newExample, user_input: e.target.value })}
-                                                        className="min-h-[60px]"
-                                                    />
-                                                    <Textarea
-                                                        placeholder="Resposta do agente"
+                                                        placeholder="Exemplo de como a IA deve responder nesta etapa..."
                                                         value={newExample.agent_response}
                                                         onChange={(e) => setNewExample({ ...newExample, agent_response: e.target.value })}
-                                                        className="min-h-[60px]"
+                                                        className="min-h-[80px]"
                                                     />
                                                     <Button onClick={() => handleAddExample(stage.id)} size="sm" className="w-full">
                                                         <Plus className="h-4 w-4 mr-2" /> Adicionar Exemplo
                                                     </Button>
                                                 </div>
                                             </div>
+
                                         </>
                                     )}
                                 </CollapsibleContent>

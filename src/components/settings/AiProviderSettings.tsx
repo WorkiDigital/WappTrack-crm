@@ -35,9 +35,9 @@ const AI_PROVIDERS = [
     label: 'Google Gemini',
     placeholder: 'AIza...',
     models: [
-      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (mais rápido)' },
-      { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (mais capaz)' },
-      { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (econômico)' },
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (mais rápido)' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (mais capaz)' },
+      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (estável)' },
     ],
   },
 ];
@@ -94,16 +94,33 @@ const AiProviderSettings = () => {
 
     setIsSaving(true);
     try {
-      const { data, error } = await supabase.functions.invoke('save-ai-settings', {
-        body: {
-          ai_provider: provider,
-          ai_api_key: apiKey.trim() || undefined,
-          ai_model: model,
-        },
-      });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
 
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Erro ao salvar');
+      const updateData: Record<string, string> = {
+        ai_provider: provider,
+        ai_model: model,
+      };
+
+      if (apiKey.trim()) {
+        updateData.ai_api_key = apiKey.trim();
+      }
+
+      // Try update first; if no row exists, insert
+      const { data: updated, error: updateError } = await supabase
+        .from('company_settings')
+        .update(updateData)
+        .eq('user_id', user.id)
+        .select('id');
+
+      if (updateError) throw updateError;
+
+      if (!updated || updated.length === 0) {
+        const { error: insertError } = await supabase
+          .from('company_settings')
+          .insert({ user_id: user.id, ...updateData });
+        if (insertError) throw insertError;
+      }
 
       if (apiKey.trim()) {
         setSavedHint(apiKey.trim().substring(0, 8) + '...');

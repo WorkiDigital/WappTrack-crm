@@ -11,27 +11,29 @@ export async function handleAgentLogic(params: {
 
     // 1. Check for triggers if lead doesn't have an agent assigned
     if (!lead.agent_id) {
-        const { data: trigger } = await supabase
+        // FIX: check if the MESSAGE contains the trigger phrase (not the other way around)
+        const { data: triggers } = await supabase
             .from('agent_triggers')
-            .select('agent_id')
-            .ilike('phrase', `%${messageContent.trim().toLowerCase()}%`)
-            .limit(1)
-            .single();
+            .select('agent_id, phrase');
 
-        if (trigger) {
-            console.log(`🤖 Trigger matched! Assigning agent ${trigger.agent_id} to lead ${lead.id}`);
+        const msgLower = messageContent.trim().toLowerCase();
+        const matched = (triggers || []).find((t: any) =>
+            msgLower.includes(t.phrase.trim().toLowerCase())
+        );
+
+        if (matched) {
+            console.log(`🤖 Trigger matched! Assigning agent ${matched.agent_id} to lead ${lead.id}`);
             const { error: updateError } = await supabase
                 .from('leads')
-                .update({ agent_id: trigger.agent_id })
+                .update({ agent_id: matched.agent_id })
                 .eq('id', lead.id);
 
             if (updateError) {
-                console.error("Error updates lead agent_id:", updateError);
+                console.error("Error updating lead agent_id:", updateError);
                 return;
             }
 
-            // Update local lead object for subsequent logic
-            lead.agent_id = trigger.agent_id;
+            lead.agent_id = matched.agent_id;
         }
     }
 
@@ -40,10 +42,10 @@ export async function handleAgentLogic(params: {
         const { data: agent, error: agentError } = await supabase
             .from('agents')
             .select(`
-                *, 
+                *,
                 stages:agent_stages(
-                    *, 
-                    stage_variables(*), 
+                    *,
+                    stage_variables(*),
                     stage_examples(*)
                 ),
                 agent_knowledge_bases(
@@ -84,15 +86,15 @@ export async function handleAgentLogic(params: {
             }
         }
 
-        if (lead.collected_variables) {
-            systemPrompt += `### DADOS COLETADOS:\n${JSON.stringify(lead.collected_variables, null, 2)}\n\n`;
+        if (lead.collected_variables && Object.keys(lead.collected_variables).length > 0) {
+            systemPrompt += `### DADOS JÁ COLETADOS (NÃO PEÇA NOVAMENTE):\n`;
+            systemPrompt += `${JSON.stringify(lead.collected_variables, null, 2)}\n\n`;
         }
 
         if (agent.knowledge_content) {
             systemPrompt += `### CONHECIMENTO ESPECÍFICO:\n${agent.knowledge_content}\n\n`;
         }
 
-        // Include linked knowledge bases
         const linkedKBs = agent.agent_knowledge_bases
             ?.filter((akb: any) => akb.is_enabled && akb.knowledge_bases)
             .map((akb: any) => akb.knowledge_bases.content)
@@ -102,163 +104,245 @@ export async function handleAgentLogic(params: {
             systemPrompt += `### BASE DE CONHECIMENTO COMPARTILHADA:\n${linkedKBs}\n\n`;
         }
 
-        // Include Lead Info & UTMs
         systemPrompt += `### INFORMAÇÕES DO LEAD:\n`;
-        systemPrompt += `- Origem (UTM Source): ${lead.utm_source || 'Direto/Orgânico'}\n`;
-        systemPrompt += `- Campanha (UTM Campaign): ${lead.utm_campaign || 'Nenhuma'}\n`;
+        systemPrompt += `- Origem: ${lead.utm_source || 'Direto/Orgânico'}\n`;
+        systemPrompt += `- Campanha: ${lead.utm_campaign || 'Nenhuma'}\n`;
         if (lead.location) systemPrompt += `- Localização: ${lead.location}\n`;
-        if (lead.collected_variables) {
-            systemPrompt += `- Dados já coletados: ${JSON.stringify(lead.collected_variables)}\n`;
-        }
         systemPrompt += `\n`;
+
+        systemPrompt += `### REGRAS CRÍTICAS:\n`;
+        systemPrompt += `- NUNCA repita dados que já foram coletados (veja "DADOS JÁ COLETADOS" acima).\n`;
+        systemPrompt += `- NUNCA concatene ou duplique nomes/cargos. Use EXATAMENTE o que o usuário informou.\n`;
+        systemPrompt += `- Se o usuário confirmou um dado (disse "sim"), aceite-o sem repetir.\n`;
+        systemPrompt += `- Analise o histórico da conversa para entender o que já foi perguntado.\n\n`;
 
         systemPrompt += `Responda o lead de forma natural e empática. Mantenha a persona.\n`;
         systemPrompt += `Instruções de Saída:\n`;
         systemPrompt += `1. Se atingir os critérios de sucesso desta etapa, inclua [AVANÇAR_ETAPA] no final.\n`;
-        systemPrompt += `2. Se extrair novos dados (como nome, email), inclua um bloco JSON como: [DATA:{"nome": "Fulano"}]\n`;
+        systemPrompt += `2. Ao coletar dados novos, inclua ao final: [DATA:{"campo": "valor"}] com os dados exatos informados pelo usuário.\n`;
 
-        // Call OpenAI (GPT-4o-mini)
-        const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-        if (!openaiApiKey) {
-            console.warn("⚠️ OPENAI_API_KEY not configured. Skipping AI response.");
+        // --- DYNAMIC AI PROVIDER ---
+        // Read provider config from company_settings (saved via AiProviderSettings UI)
+        const { data: companySettings } = await supabase
+            .from('company_settings')
+            .select('ai_provider, ai_api_key, ai_model')
+            .limit(1)
+            .single();
+
+        const aiProvider = companySettings?.ai_provider || 'openai';
+        const aiModel = companySettings?.ai_model || 'gpt-4o-mini';
+        const aiApiKey = companySettings?.ai_api_key || Deno.env.get('OPENAI_API_KEY') || '';
+
+        if (!aiApiKey) {
+            console.warn(`⚠️ No AI API key configured for provider "${aiProvider}". Skipping AI response.`);
             return;
         }
 
-        // Fetch conversation history (last 10 messages)
+        // Fetch conversation history (last 20 messages), EXCLUDING the current message
+        // (processClientMessage already saved it to DB before this runs)
         const { data: history } = await supabase
             .from('lead_messages')
-            .select('message_text, is_from_me')
+            .select('message_text, is_from_me, created_at')
             .eq('lead_id', lead.id)
             .order('created_at', { ascending: false })
-            .limit(10);
+            .limit(21);
+
+        // Filter out the current message to avoid duplication
+        const filteredHistory = (history || [])
+            .filter((m: any) => !(m.is_from_me === false && m.message_text === messageContent))
+            .slice(0, 20)
+            .reverse();
 
         const messages = [
             { role: "system", content: systemPrompt },
-            ...(history || []).reverse().map((m: any) => ({
+            ...filteredHistory.map((m: any) => ({
                 role: m.is_from_me ? "assistant" : "user",
                 content: m.message_text
             })),
             { role: "user", content: messageContent }
         ];
 
+        let aiResponse = '';
+
         try {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${openaiApiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: 'gpt-4o-mini',
-                    messages
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`OpenAI API error: ${response.statusText}`);
+            if (aiProvider === 'openai') {
+                aiResponse = await callOpenAI(aiApiKey, aiModel, messages);
+            } else if (aiProvider === 'anthropic') {
+                aiResponse = await callAnthropic(aiApiKey, aiModel, systemPrompt, messages);
+            } else if (aiProvider === 'gemini') {
+                aiResponse = await callGemini(aiApiKey, aiModel, messages);
+            } else {
+                console.error(`Unknown AI provider: ${aiProvider}`);
+                return;
             }
+        } catch (error) {
+            console.error(`💥 AI (${aiProvider}) error:`, error);
+            return;
+        }
 
-            const aiData = await response.json();
-            const aiResponse = aiData.choices[0].message.content;
-
-            // Parse AI response for metadata
-            const shouldAdvance = aiResponse.includes('[AVANÇAR_ETAPA]');
-            const dataMatch = aiResponse.match(/\[DATA:(.*?)\]/);
-            let extractedData: any = {};
-            if (dataMatch) {
-                try {
-                    extractedData = JSON.parse(dataMatch[1]);
-                } catch (e) {
-                    console.error("Failed to parse AI data JSON", e);
-                }
+        // Parse AI response for metadata
+        const shouldAdvance = aiResponse.includes('[AVANÇAR_ETAPA]');
+        const dataMatch = aiResponse.match(/\[DATA:(.*?)\]/);
+        let extractedData: any = {};
+        if (dataMatch) {
+            try {
+                extractedData = JSON.parse(dataMatch[1]);
+            } catch (e) {
+                console.error("Failed to parse AI data JSON", e);
             }
+        }
 
-            const cleanResponse = aiResponse
-                .replace('[AVANÇAR_ETAPA]', '')
-                .replace(/\[DATA:.*?\]/, '')
-                .trim();
+        const cleanResponse = aiResponse
+            .replace('[AVANÇAR_ETAPA]', '')
+            .replace(/\[DATA:.*?\]/, '')
+            .trim();
 
-            // Send response via Evolution
-            await sendThroughEvolution({
-                supabase,
-                instanceName,
-                phone: realPhoneNumber,
-                message: cleanResponse,
-                leadId: lead.id
-            });
+        // Send response via Evolution
+        await sendThroughEvolution({
+            supabase,
+            instanceName,
+            phone: realPhoneNumber,
+            message: cleanResponse,
+            leadId: lead.id
+        });
 
-            // Update lead state
-            const updateData: any = {
-                collected_variables: { ...(lead.collected_variables || {}), ...extractedData }
-            };
+        // Update lead state
+        const updateData: any = {
+            collected_variables: { ...(lead.collected_variables || {}), ...extractedData }
+        };
 
-            // SYNC: Map extracted data to lead columns if they match
-            if (extractedData.nome || extractedData.name) updateData.name = extractedData.nome || extractedData.name;
-            if (extractedData.email) updateData.email = extractedData.email;
-            if (extractedData.phone || extractedData.telefone) updateData.phone = extractedData.phone || extractedData.telefone;
+        if (extractedData.nome || extractedData.name) updateData.name = extractedData.nome || extractedData.name;
+        if (extractedData.email) updateData.email = extractedData.email;
+        if (extractedData.phone || extractedData.telefone) updateData.phone = extractedData.phone || extractedData.telefone;
 
-            if (shouldAdvance && currentStage) {
-                const stages = [...(agent.stages || [])].sort((a: any, b: any) => a.stage_order - b.stage_order);
-                const nextStage = stages.find((s: any) => s.stage_order === currentStage.stage_order + 1);
+        if (shouldAdvance && currentStage) {
+            const stages = [...(agent.stages || [])].sort((a: any, b: any) => a.stage_order - b.stage_order);
+            const nextStage = stages.find((s: any) => s.stage_order === currentStage.stage_order + 1);
 
-                if (nextStage) {
-                    updateData.current_stage_id = nextStage.id;
+            if (nextStage) {
+                updateData.current_stage_id = nextStage.id;
 
-                    // SYNC: Update lead status based on stage funnel_status
-                    if (nextStage.funnel_status) {
-                        updateData.status = nextStage.funnel_status;
-                        console.log(`🤖 Advancing lead ${lead.id} to stage: ${nextStage.name} (Status: ${nextStage.funnel_status})`);
+                if (nextStage.funnel_status) {
+                    updateData.status = nextStage.funnel_status;
+                    console.log(`🤖 Advancing lead ${lead.id} to stage: ${nextStage.name} (Status: ${nextStage.funnel_status})`);
 
-                        // SYNC: Trigger Facebook CAPI if status is 'won', 'qualified', or 'demo'
-                        const conversionStatuses = ['won', 'qualified', 'demo', 'converted'];
-                        if (conversionStatuses.includes(nextStage.funnel_status) && lead.campaigns) {
-                            const campaign = lead.campaigns;
-                            if (campaign.pixel_id && campaign.facebook_access_token) {
-                                console.log(`🚀 Triggering CAPI for lead ${lead.id} (Status: ${nextStage.funnel_status})`);
-                                try {
-                                    await supabase.functions.invoke('facebook-conversions', {
-                                        body: {
-                                            pixelId: campaign.pixel_id,
-                                            accessToken: campaign.facebook_access_token,
-                                            eventName: 'Lead', // or mapping based on status
-                                            testEventCode: campaign.test_event_code,
-                                            userData: {
-                                                phone: realPhoneNumber,
-                                                fbc: lead.collected_variables?.fbclid,
-                                                fbp: lead.collected_variables?.fbp,
-                                                clientIp: lead.ip_address,
-                                                userAgent: lead.browser
-                                            },
-                                            customData: {
-                                                lead_id: lead.id,
-                                                status: nextStage.funnel_status
-                                            }
+                    const conversionStatuses = ['won', 'qualified', 'demo', 'converted'];
+                    if (conversionStatuses.includes(nextStage.funnel_status) && lead.campaigns) {
+                        const campaign = lead.campaigns;
+                        if (campaign.pixel_id && campaign.facebook_access_token) {
+                            try {
+                                await supabase.functions.invoke('facebook-conversions', {
+                                    body: {
+                                        pixelId: campaign.pixel_id,
+                                        accessToken: campaign.facebook_access_token,
+                                        eventName: 'Lead',
+                                        testEventCode: campaign.test_event_code,
+                                        userData: {
+                                            phone: realPhoneNumber,
+                                            fbc: lead.collected_variables?.fbclid,
+                                            fbp: lead.collected_variables?.fbp,
+                                            clientIp: lead.ip_address,
+                                            userAgent: lead.browser
+                                        },
+                                        customData: {
+                                            lead_id: lead.id,
+                                            status: nextStage.funnel_status
                                         }
-                                    });
-                                } catch (capiErr) {
-                                    console.error("Error triggering CAPI from Agent:", capiErr);
-                                }
+                                    }
+                                });
+                            } catch (capiErr) {
+                                console.error("Error triggering CAPI from Agent:", capiErr);
                             }
                         }
                     }
                 }
-            } else if (!lead.current_stage_id && currentStage) {
-                updateData.current_stage_id = currentStage.id;
-                if (currentStage.funnel_status) updateData.status = currentStage.funnel_status;
             }
-
-            await supabase
-                .from('leads')
-                .update(updateData)
-                .eq('id', lead.id);
-
-        } catch (error) {
-            console.error("💥 AI processing error:", error);
+        } else if (!lead.current_stage_id && currentStage) {
+            updateData.current_stage_id = currentStage.id;
+            if (currentStage.funnel_status) updateData.status = currentStage.funnel_status;
         }
+
+        await supabase
+            .from('leads')
+            .update(updateData)
+            .eq('id', lead.id);
     }
 }
 
-// Helper to send message through Evolution API (similar to evolution-send-message)
+// ── AI Provider implementations ──────────────────────────────────────────────
+
+async function callOpenAI(apiKey: string, model: string, messages: any[]): Promise<string> {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ model, messages })
+    });
+    if (!response.ok) throw new Error(`OpenAI error: ${response.statusText}`);
+    const data = await response.json();
+    return data.choices[0].message.content;
+}
+
+async function callAnthropic(apiKey: string, model: string, systemPrompt: string, messages: any[]): Promise<string> {
+    // Anthropic uses separate system param and messages without system role
+    const anthropicMessages = messages
+        .filter((m: any) => m.role !== 'system')
+        .map((m: any) => ({ role: m.role, content: m.content }));
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            model,
+            max_tokens: 1024,
+            system: systemPrompt,
+            messages: anthropicMessages
+        })
+    });
+    if (!response.ok) throw new Error(`Anthropic error: ${response.statusText}`);
+    const data = await response.json();
+    return data.content[0].text;
+}
+
+async function callGemini(apiKey: string, model: string, messages: any[]): Promise<string> {
+    // Convert messages to Gemini format
+    const contents = messages
+        .filter((m: any) => m.role !== 'system')
+        .map((m: any) => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }]
+        }));
+
+    // Inject system prompt as first user turn if present
+    const systemMsg = messages.find((m: any) => m.role === 'system');
+    if (systemMsg) {
+        contents.unshift(
+            { role: 'user', parts: [{ text: systemMsg.content }] },
+            { role: 'model', parts: [{ text: 'Entendido. Vou seguir essas instruções.' }] }
+        );
+    }
+
+    const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents })
+        }
+    );
+    if (!response.ok) throw new Error(`Gemini error: ${response.statusText}`);
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text;
+}
+
+// ── Send via Evolution ────────────────────────────────────────────────────────
+
 async function sendThroughEvolution(params: {
     supabase: any;
     instanceName: string;
@@ -268,7 +352,6 @@ async function sendThroughEvolution(params: {
 }) {
     const { supabase, instanceName, phone, message, leadId } = params;
 
-    // Get instance config
     const { data: instance } = await supabase
         .from('whatsapp_instances')
         .select('*')
@@ -280,13 +363,33 @@ async function sendThroughEvolution(params: {
     const evolutionApiKey = Deno.env.get('EVOLUTION_API_KEY');
     const evolutionBaseUrl = Deno.env.get('EVOLUTION_API_URL') || instance.base_url || "https://evoapi.workidigital.tech";
 
+    const headers = {
+        'Content-Type': 'application/json',
+        'apikey': evolutionApiKey || ''
+    };
+
     try {
+        // Simulate typing: send "composing" presence
+        await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ number: phone, options: { presence: 'composing' } })
+        }).catch(() => {}); // ignore errors, presence is optional
+
+        // Delay proportional to message length (min 1s, max 5s)
+        const typingMs = Math.min(5000, Math.max(1000, message.length * 30));
+        await new Promise(resolve => setTimeout(resolve, typingMs));
+
+        // Stop typing presence
+        await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ number: phone, options: { presence: 'paused' } })
+        }).catch(() => {});
+
         const response = await fetch(`${evolutionBaseUrl}/message/sendText/${instanceName}`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': evolutionApiKey || ''
-            },
+            headers,
             body: JSON.stringify({
                 number: phone,
                 text: message
@@ -296,7 +399,6 @@ async function sendThroughEvolution(params: {
         if (response.ok) {
             const evolutionData = await response.json();
 
-            // Save outgoing message to lead_messages
             await supabase
                 .from('lead_messages')
                 .insert({
@@ -308,7 +410,6 @@ async function sendThroughEvolution(params: {
                     instance_name: instanceName
                 });
 
-            // Update lead summary
             await supabase
                 .from('leads')
                 .update({
