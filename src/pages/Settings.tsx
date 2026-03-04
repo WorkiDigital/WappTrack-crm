@@ -6,6 +6,7 @@ import ThemeSettings from '@/components/settings/ThemeSettings';
 import MultipleInstancesSettings from '@/components/settings/MultipleInstancesSettings';
 import FacebookMetaSettings from '@/components/settings/FacebookMetaSettings';
 import NotificationSoundSettings from '@/components/settings/NotificationSoundSettings';
+import AiProviderSettings from '@/components/settings/AiProviderSettings';
 import { useSettings } from '@/hooks/useSettings';
 import { Settings as SettingsIcon } from 'lucide-react';
 
@@ -59,6 +60,8 @@ const Settings = () => {
           />
 
           <NotificationSoundSettings />
+
+          <AiProviderSettings />
 
           <FacebookMetaSettings />
 
