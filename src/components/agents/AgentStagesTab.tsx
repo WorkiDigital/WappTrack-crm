@@ -50,7 +50,7 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
     const handleAddStage = async () => {
         if (!newStageName) return;
         try {
-            const order = (agent.stages?.length || 0) + 1;
+            const order = (agent.agent_stages?.length || 0) + 1;
             await agentService.createStage({
                 agent_id: agent.id,
                 name: newStageName,
@@ -163,7 +163,7 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
         }
     };
 
-    const sortedStages = [...(agent.stages || [])].sort((a, b) => a.stage_order - b.stage_order);
+    const sortedStages = [...(agent.agent_stages || [])].sort((a, b) => a.stage_order - b.stage_order);
 
     return (
         <div className="space-y-6">

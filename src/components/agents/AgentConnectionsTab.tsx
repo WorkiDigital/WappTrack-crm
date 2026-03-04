@@ -56,7 +56,7 @@ export const AgentConnectionsTab = ({ agent, onUpdate }: AgentConnectionsTabProp
     const handleAddChannel = async () => {
         if (!newChannelId || newChannelId === 'none') return;
 
-        if (agent.channels?.some(c => c.channel_id === newChannelId)) {
+        if (agent.agent_channels?.some(c => c.channel_id === newChannelId)) {
             toast.error('Este canal já está vinculado ao agente');
             return;
         }
@@ -104,7 +104,7 @@ export const AgentConnectionsTab = ({ agent, onUpdate }: AgentConnectionsTabProp
                         <Button size="icon" onClick={handleAddTrigger}><Plus className="h-4 w-4" /></Button>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        {agent.triggers?.map((trigger) => (
+                        {agent.agent_triggers?.map((trigger) => (
                             <Badge key={trigger.id} variant="secondary" className="pl-3 pr-1 py-1 gap-2">
                                 {trigger.phrase}
                                 <Button
@@ -158,7 +158,7 @@ export const AgentConnectionsTab = ({ agent, onUpdate }: AgentConnectionsTabProp
                         </div>
                         <Separator />
                         <div className="space-y-2">
-                            {agent.channels?.map((channel) => (
+                            {agent.agent_channels?.map((channel) => (
                                 <div key={channel.id} className="flex items-center justify-between p-2 border rounded-md bg-background">
                                     <div className="flex items-center gap-2">
                                         {channel.channel_type === 'whatsapp' ? <Smartphone className="h-4 w-4 text-green-500" /> : <Instagram className="h-4 w-4 text-pink-500" />}
@@ -173,7 +173,7 @@ export const AgentConnectionsTab = ({ agent, onUpdate }: AgentConnectionsTabProp
                                     </Button>
                                 </div>
                             ))}
-                            {(!agent.channels || agent.channels.length === 0) && (
+                            {(!agent.agent_channels || agent.agent_channels.length === 0) && (
                                 <p className="text-sm text-muted-foreground text-center py-4">Nenhum canal configurado.</p>
                             )}
                         </div>
