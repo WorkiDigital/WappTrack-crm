@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Slider } from '@/components/ui/slider';
 
 interface AudioMessagePlayerProps {
     src: string;
@@ -19,29 +18,30 @@ function formatTime(seconds: number): string {
 
 export const AudioMessagePlayer = ({ src, isFromMe }: AudioMessagePlayerProps) => {
     const audioRef = useRef<HTMLAudioElement>(null);
+    const trackRef = useRef<HTMLDivElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [speedIdx, setSpeedIdx] = useState(0);
 
     const speed = SPEED_STEPS[speedIdx];
+    const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
     const togglePlay = useCallback(() => {
         const audio = audioRef.current;
         if (!audio) return;
-        if (isPlaying) {
-            audio.pause();
-        } else {
-            audio.play();
-        }
+        if (isPlaying) audio.pause();
+        else audio.play();
     }, [isPlaying]);
 
-    const handleSeek = useCallback((value: number[]) => {
+    const handleTrackClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         const audio = audioRef.current;
-        if (!audio) return;
-        audio.currentTime = value[0];
-        setCurrentTime(value[0]);
-    }, []);
+        const track = trackRef.current;
+        if (!audio || !track || !duration) return;
+        const rect = track.getBoundingClientRect();
+        const ratio = (e.clientX - rect.left) / rect.width;
+        audio.currentTime = Math.max(0, Math.min(ratio * duration, duration));
+    }, [duration]);
 
     const cycleSpeed = useCallback(() => {
         const next = (speedIdx + 1) % SPEED_STEPS.length;
@@ -52,71 +52,73 @@ export const AudioMessagePlayer = ({ src, isFromMe }: AudioMessagePlayerProps) =
     useEffect(() => {
         const audio = audioRef.current;
         if (!audio) return;
-
         const onPlay = () => setIsPlaying(true);
         const onPause = () => setIsPlaying(false);
         const onEnded = () => { setIsPlaying(false); setCurrentTime(0); };
         const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-        const onLoadedMetadata = () => setDuration(audio.duration);
-
+        const onLoaded = () => setDuration(audio.duration);
         audio.addEventListener('play', onPlay);
         audio.addEventListener('pause', onPause);
         audio.addEventListener('ended', onEnded);
         audio.addEventListener('timeupdate', onTimeUpdate);
-        audio.addEventListener('loadedmetadata', onLoadedMetadata);
-
+        audio.addEventListener('loadedmetadata', onLoaded);
         return () => {
             audio.removeEventListener('play', onPlay);
             audio.removeEventListener('pause', onPause);
             audio.removeEventListener('ended', onEnded);
             audio.removeEventListener('timeupdate', onTimeUpdate);
-            audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+            audio.removeEventListener('loadedmetadata', onLoaded);
         };
     }, []);
 
-    const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+    const trackBg = isFromMe ? 'bg-white/25' : 'bg-black/15';
+    const rangeBg = isFromMe ? 'bg-white' : 'bg-foreground';
+    const thumbBg = isFromMe ? 'bg-white' : 'bg-foreground';
+    const textMuted = isFromMe ? 'text-white/70' : 'text-muted-foreground';
+    const btnBg = isFromMe ? 'bg-white/20 hover:bg-white/30' : 'bg-black/10 hover:bg-black/20';
 
     return (
-        <div className={cn(
-            'flex items-center gap-2 rounded-full px-3 py-2 min-w-[220px]',
-            isFromMe
-                ? 'bg-primary/90 text-primary-foreground'
-                : 'bg-muted text-foreground'
-        )}>
+        <div className="flex items-center gap-2 min-w-[220px]">
             <audio ref={audioRef} src={src} preload="metadata" />
 
             {/* Play/Pause */}
             <button
                 onClick={togglePlay}
                 className={cn(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-80',
-                    isFromMe ? 'bg-primary-foreground/20' : 'bg-foreground/10'
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+                    btnBg
                 )}
             >
                 {isPlaying
-                    ? <Pause className="h-4 w-4 fill-current" />
-                    : <Play className="h-4 w-4 fill-current ml-0.5" />
+                    ? <Pause className={cn('h-4 w-4 fill-current', isFromMe ? 'text-white' : 'text-foreground')} />
+                    : <Play className={cn('h-4 w-4 fill-current ml-0.5', isFromMe ? 'text-white' : 'text-foreground')} />
                 }
             </button>
 
-            {/* Waveform / Slider area */}
-            <div className="flex flex-1 flex-col gap-0.5 min-w-0">
-                <Slider
-                    value={[currentTime]}
-                    min={0}
-                    max={duration || 1}
-                    step={0.1}
-                    onValueChange={handleSeek}
-                    className={cn(
-                        'h-1 cursor-pointer',
-                        isFromMe ? '[&_[data-slot=track]]:bg-primary-foreground/30 [&_[data-slot=range]]:bg-primary-foreground [&_[data-slot=thumb]]:bg-primary-foreground [&_[data-slot=thumb]]:border-primary-foreground/50' : ''
-                    )}
-                />
+            {/* Track area */}
+            <div className="flex flex-1 flex-col gap-1 min-w-0">
+                {/* Progress bar */}
+                <div
+                    ref={trackRef}
+                    className={cn('relative h-1.5 w-full rounded-full cursor-pointer', trackBg)}
+                    onClick={handleTrackClick}
+                >
+                    <div
+                        className={cn('absolute left-0 top-0 h-full rounded-full transition-all', rangeBg)}
+                        style={{ width: `${progress}%` }}
+                    />
+                    {/* Thumb dot */}
+                    <div
+                        className={cn('absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full shadow', thumbBg)}
+                        style={{ left: `${progress}%` }}
+                    />
+                </div>
+                {/* Times */}
                 <div className="flex items-center justify-between">
-                    <span className={cn('text-[10px] tabular-nums', isFromMe ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
+                    <span className={cn('text-[10px] tabular-nums', textMuted)}>
                         {formatTime(isPlaying || currentTime > 0 ? currentTime : duration)}
                     </span>
-                    <span className={cn('text-[10px] tabular-nums', isFromMe ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
+                    <span className={cn('text-[10px] tabular-nums', textMuted)}>
                         {formatTime(duration)}
                     </span>
                 </div>
@@ -126,8 +128,9 @@ export const AudioMessagePlayer = ({ src, isFromMe }: AudioMessagePlayerProps) =
             <button
                 onClick={cycleSpeed}
                 className={cn(
-                    'shrink-0 text-[10px] font-bold w-7 text-center rounded-sm px-1 py-0.5 transition-opacity hover:opacity-80',
-                    isFromMe ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-foreground/10 text-foreground'
+                    'shrink-0 text-[10px] font-bold w-7 text-center rounded px-1 py-0.5 transition-colors',
+                    btnBg,
+                    isFromMe ? 'text-white' : 'text-foreground'
                 )}
             >
                 {speed}x

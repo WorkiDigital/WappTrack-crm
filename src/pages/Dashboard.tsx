@@ -33,16 +33,22 @@ const Dashboard = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
+      // 15s timeout so the dashboard never hangs forever
+      const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
+        Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))]);
+
       const [dashboardStats, campaignData, timeline] = await Promise.all([
-        getDashboardStatsByPeriod(dateRange.startDate.toISOString(), dateRange.endDate.toISOString()),
-        getCampaignPerformance(),
-        getTimelineData(dateRange.startDate.toISOString(), dateRange.endDate.toISOString())
+        withTimeout(getDashboardStatsByPeriod(dateRange.startDate.toISOString(), dateRange.endDate.toISOString())),
+        withTimeout(getCampaignPerformance()),
+        withTimeout(getTimelineData(dateRange.startDate.toISOString(), dateRange.endDate.toISOString()))
       ]);
       setStats(dashboardStats);
       setCampaignPerformance(campaignData);
       setTimelineData(timeline);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      // Ensure stats render with zeros instead of hanging skeleton
+      setStats({ totalLeads: 0, totalSales: 0, totalRevenue: 0, conversionRate: 0, todaysLeads: 0, confirmedSales: 0, pendingConversations: 0, monthlyLeads: 0, monthlyRevenue: 0 });
     } finally {
       setIsLoading(false);
     }
