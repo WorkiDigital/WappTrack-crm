@@ -18,7 +18,12 @@ export const agentService = {
         *,
         agent_stages (*, stage_variables (*), stage_examples (*)),
         agent_channels (*),
-        agent_triggers (*)
+        agent_triggers (*),
+        agent_knowledge_bases (
+          is_enabled,
+          knowledge_base_id,
+          knowledge_bases (*)
+        )
       `)
             .order('created_at', { ascending: false });
 

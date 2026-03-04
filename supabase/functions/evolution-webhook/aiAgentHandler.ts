@@ -78,11 +78,13 @@ export async function handleAgentLogic(params: {
             systemPrompt += `Critérios de sucesso (quando atingidos, inclua [AVANÇAR_ETAPA]): ${currentStage.success_criteria}\n`;
 
             if (currentStage.stage_examples && currentStage.stage_examples.length > 0) {
-                systemPrompt += `\nExemplos de conversa para esta etapa:\n`;
-                currentStage.stage_examples.forEach((ex: any) => {
-                    if (ex.user_message) systemPrompt += `  Usuário: ${ex.user_message}\n`;
-                    if (ex.agent_response) systemPrompt += `  Você: ${ex.agent_response}\n`;
-                });
+                const assistantExamples = currentStage.stage_examples.filter((ex: any) => ex.role === 'assistant');
+                if (assistantExamples.length > 0) {
+                    systemPrompt += `\nExemplos de como você deve responder nesta etapa:\n`;
+                    assistantExamples.forEach((ex: any) => {
+                        if (ex.message) systemPrompt += `  Você: ${ex.message}\n`;
+                    });
+                }
             }
             systemPrompt += `\n`;
 

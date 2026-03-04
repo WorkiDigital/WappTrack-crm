@@ -97,7 +97,7 @@ export const AgentKnowledgeTab = ({ agent, onUpdate }: AgentKnowledgeTabProps) =
 
     // Helper to check if a KB is linked to the current agent
     const isKBLinked = (kbId: string) => {
-        return agent.knowledge_bases?.some(kb => kb.id === kbId);
+        return agent.agent_knowledge_bases?.some(akb => akb.knowledge_base_id === kbId);
     };
 
     return (

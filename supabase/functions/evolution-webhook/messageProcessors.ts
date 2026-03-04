@@ -167,7 +167,7 @@ export const processClientMessage = async (params: {
         console.log(`🚫 Palavra-chave de CANCELAMENTO detectada em: "${cleanedMessage}"`);
         const { error: updateErrorKeyword } = await supabase
           .from('leads')
-          .update({ status: 'lost' }) // Changed to 'cancelled' for consistency
+          .update({ status: 'cancelled' })
           .eq('id', lead.id);
 
         if (updateErrorKeyword) console.error('Erro ao mover lead para cancelado:', updateErrorKeyword);
