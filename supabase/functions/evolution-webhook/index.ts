@@ -117,7 +117,7 @@ serve(async (req) => {
 
         const { data: matchedLeads, error: searchError } = await supabase
           .from('leads')
-          .select('*, campaigns!leads_campaign_id_fkey(conversion_keywords, cancellation_keywords)')
+          .select('*, campaigns!leads_campaign_id_fkey(conversion_keywords, cancellation_keywords, pixel_id, facebook_access_token, test_event_code)')
           .in('phone', phoneVariations);
 
         if (searchError) {

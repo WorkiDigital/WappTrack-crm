@@ -113,6 +113,9 @@ export async function handleAgentLogic(params: {
         }
 
         systemPrompt += `### INFORMAÇÕES DO LEAD:\n`;
+        if (lead.name) systemPrompt += `- Nome: ${lead.name}\n`;
+        if (lead.email) systemPrompt += `- Email: ${lead.email}\n`;
+        if (lead.phone) systemPrompt += `- Telefone: ${lead.phone}\n`;
         systemPrompt += `- Origem: ${lead.utm_source || 'Direto/Orgânico'}\n`;
         systemPrompt += `- Campanha: ${lead.utm_campaign || 'Nenhuma'}\n`;
         if (lead.location) systemPrompt += `- Localização: ${lead.location}\n`;
