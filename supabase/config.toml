@@ -1,0 +1,31 @@
+project_id = "kdnmzyaozdssdwegdwlb"
+
+[functions.facebook-app-id]
+verify_jwt = false
+
+[functions.evolution-webhook]
+verify_jwt = false
+
+[functions.evolution-send-message]
+verify_jwt = false
+
+[functions.evolution-qrcode]
+verify_jwt = false
+
+[functions.evolution-status]
+verify_jwt = false
+
+[functions.evolution-create-instance]
+verify_jwt = false
+
+[functions.evolution-disconnect]
+verify_jwt = false
+
+[functions.facebook-conversions]
+verify_jwt = false
+
+[functions.redirect-handler]
+verify_jwt = false
+
+[functions.facebook-oauth-callback]
+verify_jwt = false
