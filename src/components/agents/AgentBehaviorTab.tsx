@@ -36,7 +36,18 @@ export const AgentBehaviorTab = ({ agent, onUpdate }: AgentBehaviorTabProps) => 
     const handleSave = async () => {
         try {
             setIsSaving(true);
-            await agentService.updateAgent(agent.id, formData);
+            const { data: { user } } = await supabase.auth.getUser();
+            const userId = user?.id;
+
+            if (!userId) {
+                toast.error('Você precisa estar logado para atualizar um agente');
+                return;
+            }
+
+            await agentService.updateAgent(agent.id, {
+                ...formData,
+                user_id: userId
+            } as any);
             toast.success('Agente atualizado com sucesso');
             onUpdate();
         } catch (error: any) {

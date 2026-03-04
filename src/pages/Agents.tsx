@@ -81,10 +81,19 @@ const Agents = () => {
 
             const instanceId = instances && instances.length > 0 ? instances[0].id : null;
 
+            const { data: { user } } = await supabase.auth.getUser();
+            const userId = user?.id;
+
+            if (!userId) {
+                toast.error('Você precisa estar logado para criar um agente');
+                return;
+            }
+
             const newAgent = await agentService.createAgent({
                 name: newAgentName,
-                instance_id: instanceId
-            });
+                instance_id: instanceId,
+                user_id: userId
+            } as any);
 
             toast.success('Agente criado com sucesso');
             setIsCreateDialogOpen(false);
