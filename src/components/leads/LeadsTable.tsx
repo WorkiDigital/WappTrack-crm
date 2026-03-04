@@ -118,7 +118,11 @@ const LeadsTable: React.FC<LeadsTableProps> = ({
                     {formatBrazilianPhone(lead.phone)}
                   </TableCell>
                   <TableCell className="min-w-24">
-                    <LeadStatusBadge status={lead.status} />
+                    <LeadStatusBadge
+                        status={lead.status}
+                        stageName={(lead as any).pipeline_stage_name}
+                        stageColor={(lead as any).pipeline_stage_color}
+                    />
                   </TableCell>
                   <TableCell className="w-32 min-w-32 text-xs whitespace-nowrap">
                     {lead.created_at

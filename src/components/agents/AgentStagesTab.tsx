@@ -13,7 +13,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ALL_STATUSES, getStatusLabel, FUNNEL_STATUSES } from '@/constants/funnelStatuses';
+import { usePipelines } from '@/hooks/usePipelines';
 
 interface AgentStagesTabProps {
     agent: AgentWithRelations;
@@ -31,9 +31,12 @@ const FIELD_TYPES = [
 ];
 
 export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
+    const { pipelines } = usePipelines();
+    const allPipelineStages = pipelines.flatMap(p => (p.stages || []).map(s => ({ ...s, pipelineName: p.name, pipelineColor: p.color })));
+
     const [isAdding, setIsAdding] = useState(false);
     const [newStageName, setNewStageName] = useState('');
-    const [newStageFunnelStatus, setNewStageFunnelStatus] = useState('new');
+    const [newStageFunnelStatus, setNewStageFunnelStatus] = useState('');
     const [editingStageId, setEditingStageId] = useState<string | null>(null);
     const [stageFormData, setStageFormData] = useState<{
         name: string;
@@ -226,19 +229,24 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label className="text-xs font-semibold">Status no Kanban</Label>
-                                        <Select
-                                            value={newStageFunnelStatus}
-                                            onValueChange={setNewStageFunnelStatus}
-                                        >
+                                        <Label className="text-xs font-semibold">Etapa do Pipeline</Label>
+                                        <Select value={newStageFunnelStatus} onValueChange={setNewStageFunnelStatus}>
                                             <SelectTrigger>
-                                                <SelectValue />
+                                                <SelectValue placeholder="Selecione..." />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {ALL_STATUSES.map(status => (
-                                                    <SelectItem key={status} value={status}>
-                                                        {getStatusLabel(status)}
-                                                    </SelectItem>
+                                                {pipelines.map(p => (
+                                                    <React.Fragment key={p.id}>
+                                                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground border-b">{p.name}</div>
+                                                        {(p.stages || []).map(s => (
+                                                            <SelectItem key={s.id} value={s.maps_to_status}>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                                                                    {s.name}
+                                                                </div>
+                                                            </SelectItem>
+                                                        ))}
+                                                    </React.Fragment>
                                                 ))}
                                             </SelectContent>
                                         </Select>
@@ -331,19 +339,27 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                                     />
                                                 </div>
                                                 <div className="grid gap-2">
-                                                    <Label className="text-sm font-semibold">Status no Kanban</Label>
+                                                    <Label className="text-sm font-semibold">Etapa do Pipeline</Label>
                                                     <Select
                                                         value={stageFormData.funnel_status}
                                                         onValueChange={(value) => setStageFormData({ ...stageFormData, funnel_status: value })}
                                                     >
                                                         <SelectTrigger>
-                                                            <SelectValue />
+                                                            <SelectValue placeholder="Selecione..." />
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            {ALL_STATUSES.map(status => (
-                                                                <SelectItem key={status} value={status}>
-                                                                    {getStatusLabel(status)}
-                                                                </SelectItem>
+                                                            {pipelines.map(p => (
+                                                                <React.Fragment key={p.id}>
+                                                                    <div className="px-2 py-1 text-xs font-semibold text-muted-foreground border-b">{p.name}</div>
+                                                                    {(p.stages || []).map(s => (
+                                                                        <SelectItem key={s.id} value={s.maps_to_status}>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                                                                                {s.name}
+                                                                            </div>
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </React.Fragment>
                                                             ))}
                                                         </SelectContent>
                                                     </Select>
