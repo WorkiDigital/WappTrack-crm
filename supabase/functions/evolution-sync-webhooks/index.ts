@@ -67,7 +67,7 @@ serve(async (req) => {
             });
         }
 
-        const webhookUrl = `https://kdnmzyaozdssdwegdwlb.supabase.co/functions/v1/evolution-webhook`;
+        const webhookUrl = `https://qdilrnnfmjkunxmukoek.supabase.co/functions/v1/evolution-webhook`;
         const results = [];
 
         for (const inst of instances) {

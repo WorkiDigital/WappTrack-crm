@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 
-const SUPABASE_URL = 'https://kdnmzyaozdssdwegdwlb.supabase.co';
+const SUPABASE_URL = 'https://qdilrnnfmjkunxmukoek.supabase.co';
 
 const Redirect = () => {
   const [searchParams] = useSearchParams();

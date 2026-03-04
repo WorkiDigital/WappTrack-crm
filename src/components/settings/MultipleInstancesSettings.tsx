@@ -145,7 +145,7 @@ const MultipleInstancesSettings = () => {
           <p className="font-medium mb-2">Configuração do Webhook:</p>
           <ul className="list-disc list-inside space-y-1 text-xs">
             <li>Cada instância terá seu próprio webhook configurado automaticamente</li>
-            <li>URL do webhook: <code>https://kdnmzyaozdssdwegdwlb.supabase.co/functions/v1/evolution-webhook</code></li>
+            <li>URL do webhook: <code>https://qdilrnnfmjkunxmukoek.supabase.co/functions/v1/evolution-webhook</code></li>
             <li>Eventos: <code>messages.upsert</code></li>
             <li>Todas as mensagens recebidas serão processadas automaticamente</li>
           </ul>

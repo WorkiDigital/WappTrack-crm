@@ -34,8 +34,8 @@ export interface AgentStageWithRelations extends AgentStage {
 }
 
 export interface AgentWithRelations extends Agent {
-    stages?: AgentStageWithRelations[];
-    channels?: (AgentChannel & { channel_id?: string; name?: string })[];
-    triggers?: AgentTrigger[];
-    knowledge_bases?: (KnowledgeBase & { is_enabled: boolean })[];
+    agent_stages?: AgentStageWithRelations[];
+    agent_channels?: AgentChannel[];
+    agent_triggers?: AgentTrigger[];
+    agent_knowledge_bases?: { is_enabled: boolean | null; knowledge_base_id: string; knowledge_bases: KnowledgeBase | null }[];
 }
