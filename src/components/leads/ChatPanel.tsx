@@ -10,6 +10,7 @@ import { ptBR } from 'date-fns/locale';
 import { Send, MessageCircle, Loader2, X, Image as ImageIcon, Video, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MediaInput } from './MediaInput';
+import { AudioMessagePlayer } from './AudioMessagePlayer';
 
 interface ChatPanelProps {
   lead: Lead | null;
@@ -129,12 +130,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ lead, onClose }) => {
                     'max-w-[80%] rounded-lg px-4 py-2',
                     message.is_from_me
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted'
+                      : 'bg-muted',
+                    message.media_type === 'audio' && 'px-2 py-2'
                   )}
                 >
+                  {message.media_type === 'audio' && message.media_url ? (
+                    <AudioMessagePlayer src={message.media_url} isFromMe={message.is_from_me} />
+                  ) : (
                   <p className="text-sm whitespace-pre-wrap break-words">
                     {message.message_text}
                   </p>
+                  )}
                   <div
                     className={cn(
                       'flex items-center gap-2 mt-1',
