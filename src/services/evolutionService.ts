@@ -136,7 +136,7 @@ export const evolutionService = {
           instance_name: instanceName,
           description,
           user_id: authData.user.id,
-          webhook_url: `https://qdilrnnfmjkunxmukoek.supabase.co/functions/v1/evolution-webhook`
+          webhook_url: `https://kdnmzyaozdssdwegdwlb.supabase.co/functions/v1/evolution-webhook`
         })
         .select()
         .single();
