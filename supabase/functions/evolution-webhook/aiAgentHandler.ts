@@ -88,6 +88,10 @@ export async function handleAgentLogic(params: {
             }
             systemPrompt += `\n`;
 
+            if (currentStage.ia_context) {
+                systemPrompt += `### INSTRUÇÕES EXTRAS DESTA ETAPA:\n${currentStage.ia_context}\n\n`;
+            }
+
             if (currentStage.stage_variables && currentStage.stage_variables.length > 0) {
                 const alreadyCollected = Object.keys(lead.collected_variables || {});
                 const pendingVars = currentStage.stage_variables.filter(
@@ -96,7 +100,8 @@ export async function handleAgentLogic(params: {
                 if (pendingVars.length > 0) {
                     systemPrompt += `### DADOS QUE VOCÊ AINDA PRECISA COLETAR NESTA ETAPA:\n`;
                     pendingVars.forEach((v: any) => {
-                        systemPrompt += `- ${v.field_name}: ${v.description} (${v.is_required ? 'OBRIGATÓRIO' : 'Opcional'})\n`;
+                        const formatHint = getFormatHint(v.field_type);
+                        systemPrompt += `- ${v.field_name}: ${v.description} (${v.is_required ? 'OBRIGATÓRIO' : 'Opcional'}${formatHint ? `, formato esperado: ${formatHint}` : ''})\n`;
                     });
                     systemPrompt += `\n`;
                 } else {
@@ -268,6 +273,21 @@ export async function handleAgentLogic(params: {
             if (nextStage) {
                 updateData.current_stage_id = nextStage.id;
 
+                // Auto-send opening message of the next stage if configured
+                const openingExample = nextStage.stage_examples?.find((ex: any) => ex.role === 'opening');
+                if (openingExample?.message) {
+                    // Small delay so the current AI response arrives first
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    await sendThroughEvolution({
+                        supabase,
+                        instanceName,
+                        phone: realPhoneNumber,
+                        message: openingExample.message,
+                        leadId: lead.id
+                    });
+                    console.log(`📬 Sent opening message for stage: ${nextStage.name}`);
+                }
+
                 if (nextStage.funnel_status) {
                     updateData.status = nextStage.funnel_status;
                     console.log(`🤖 Advancing lead ${lead.id} to stage: ${nextStage.name} (Status: ${nextStage.funnel_status})`);
@@ -312,6 +332,20 @@ export async function handleAgentLogic(params: {
             .from('leads')
             .update(updateData)
             .eq('id', lead.id);
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getFormatHint(fieldType: string | null): string {
+    switch (fieldType) {
+        case 'email': return 'e-mail válido (ex: nome@empresa.com)';
+        case 'phone': return 'telefone com DDD (ex: 11 99999-9999)';
+        case 'number': return 'apenas números';
+        case 'date': return 'data (ex: 15/03/2025)';
+        case 'cpf': return 'CPF (ex: 123.456.789-00)';
+        case 'cnpj': return 'CNPJ (ex: 12.345.678/0001-99)';
+        default: return '';
     }
 }
 

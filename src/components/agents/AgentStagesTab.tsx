@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, Save, ChevronDown, ChevronUp, Info, Target, CheckCircle, Database, MessageSquare } from 'lucide-react';
+import { Plus, Trash2, Save, ChevronDown, ChevronUp, Info, Target, CheckCircle, Database, MessageSquare, Zap, Send } from 'lucide-react';
 import { AgentWithRelations, AgentStageWithRelations, StageVariable, StageExample } from '@/types/agent';
 import { agentService } from '@/services/agentService';
 import { toast } from "sonner";
@@ -20,6 +20,16 @@ interface AgentStagesTabProps {
     onUpdate: () => void;
 }
 
+const FIELD_TYPES = [
+    { value: 'text', label: 'Texto livre' },
+    { value: 'email', label: 'E-mail' },
+    { value: 'phone', label: 'Telefone' },
+    { value: 'number', label: 'Número' },
+    { value: 'date', label: 'Data' },
+    { value: 'cpf', label: 'CPF' },
+    { value: 'cnpj', label: 'CNPJ' },
+];
+
 export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
     const [isAdding, setIsAdding] = useState(false);
     const [newStageName, setNewStageName] = useState('');
@@ -30,11 +40,13 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
         objective: string;
         success_criteria: string;
         funnel_status: string;
-    }>({ name: '', objective: '', success_criteria: '', funnel_status: 'new' });
+        ia_context: string;
+    }>({ name: '', objective: '', success_criteria: '', funnel_status: 'new', ia_context: '' });
 
     // Local state for adding variables/examples
-    const [newVar, setNewVar] = useState({ name: '', description: '', required: false });
-    const [newExample, setNewExample] = useState({ user_input: '', agent_response: '' });
+    const [newVar, setNewVar] = useState({ name: '', description: '', required: false, field_type: 'text' });
+    const [newExample, setNewExample] = useState({ agent_response: '' });
+    const [newOpeningMsg, setNewOpeningMsg] = useState('');
 
     // Limpar os campos quando o agente muda
     useEffect(() => {
@@ -42,9 +54,10 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
         setNewStageName('');
         setNewStageFunnelStatus('new');
         setEditingStageId(null);
-        setStageFormData({ name: '', objective: '', success_criteria: '', funnel_status: 'new' });
-        setNewVar({ name: '', description: '', required: false });
-        setNewExample({ user_input: '', agent_response: '' });
+        setStageFormData({ name: '', objective: '', success_criteria: '', funnel_status: 'new', ia_context: '' });
+        setNewVar({ name: '', description: '', required: false, field_type: 'text' });
+        setNewExample({ agent_response: '' });
+        setNewOpeningMsg('');
     }, [agent.id]);
 
     const handleAddStage = async () => {
@@ -74,7 +87,8 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
             name: stage.name,
             objective: stage.objective || '',
             success_criteria: stage.success_criteria || '',
-            funnel_status: (stage as any).funnel_status || 'new'
+            funnel_status: (stage as any).funnel_status || 'new',
+            ia_context: (stage as any).ia_context || ''
         });
     };
 
@@ -110,10 +124,11 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                 stage_id: stageId,
                 field_name: newVar.name,
                 description: newVar.description,
-                is_required: newVar.required
+                is_required: newVar.required,
+                field_type: newVar.field_type
             });
             toast.success('Variável adicionada');
-            setNewVar({ name: '', description: '', required: false });
+            setNewVar({ name: '', description: '', required: false, field_type: 'text' });
             onUpdate();
         } catch (error: any) {
             toast.error(error?.message || 'Erro ao adicionar variável');
@@ -139,12 +154,32 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                 role: 'assistant',
                 message: newExample.agent_response
             });
-
             toast.success('Exemplo adicionado');
-            setNewExample({ user_input: '', agent_response: '' });
+            setNewExample({ agent_response: '' });
             onUpdate();
         } catch (error: any) {
             toast.error(error?.message || 'Erro ao adicionar exemplo');
+        }
+    };
+
+    const handleAddOpeningMsg = async (stageId: string) => {
+        if (!newOpeningMsg) return;
+        try {
+            // Remove existing opening message first
+            const stage = (agent.agent_stages || []).find(s => s.id === stageId);
+            const existing = (stage?.stage_examples as any[])?.find((ex: any) => ex.role === 'opening');
+            if (existing) await agentService.deleteExample(existing.id);
+
+            await agentService.createExample({
+                stage_id: stageId,
+                role: 'opening',
+                message: newOpeningMsg
+            });
+            toast.success('Mensagem de abertura salva');
+            setNewOpeningMsg('');
+            onUpdate();
+        } catch (error: any) {
+            toast.error(error?.message || 'Erro ao salvar mensagem de abertura');
         }
     };
 
@@ -156,6 +191,10 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
         } catch (error: any) {
             toast.error(error?.message || 'Erro ao remover exemplo');
         }
+    };
+
+    const getFieldTypeLabel = (type: string | null) => {
+        return FIELD_TYPES.find(f => f.value === type)?.label || 'Texto livre';
     };
 
     const sortedStages = [...(agent.agent_stages || [])].sort((a, b) => a.stage_order - b.stage_order);
@@ -212,173 +251,258 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                             </div>
                         )}
 
-                        {sortedStages.map((stage, index) => (
-                            <Collapsible
-                                key={stage.id}
-                                open={editingStageId === stage.id}
-                                onOpenChange={(open) => !open && setEditingStageId(null)}
-                                className="group border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all"
-                            >
-                                <div className="flex items-center justify-between p-4 bg-card">
-                                    <div className="flex items-center gap-4">
-                                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-sm">
-                                            {index + 1}
+                        {sortedStages.map((stage, index) => {
+                            const openingMsg = (stage.stage_examples as any[])?.find((ex: any) => ex.role === 'opening');
+                            return (
+                                <Collapsible
+                                    key={stage.id}
+                                    open={editingStageId === stage.id}
+                                    onOpenChange={(open) => !open && setEditingStageId(null)}
+                                    className="group border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all"
+                                >
+                                    <div className="flex items-center justify-between p-4 bg-card">
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-sm">
+                                                {index + 1}
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-lg leading-none">{stage.name}</h3>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <p className="text-xs text-muted-foreground line-clamp-1">{stage.objective || "Sem objetivo definido"}</p>
+                                                    {openingMsg && (
+                                                        <Badge variant="secondary" className="text-xs py-0 h-4">
+                                                            <Send className="h-2.5 w-2.5 mr-1" /> Abertura
+                                                        </Badge>
+                                                    )}
+                                                    {(stage as any).ia_context && (
+                                                        <Badge variant="outline" className="text-xs py-0 h-4 border-blue-300 text-blue-600">
+                                                            <Zap className="h-2.5 w-2.5 mr-1" /> Instruções IA
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h3 className="font-bold text-lg leading-none">{stage.name}</h3>
-                                            <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{stage.objective || "Sem objetivo definido"}</p>
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => editingStageId === stage.id ? setEditingStageId(null) : handleStartEdit(stage)}
+                                            >
+                                                {editingStageId === stage.id ? "Recolher" : "Configurar"}
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                                onClick={() => handleDeleteStage(stage.id)}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => editingStageId === stage.id ? setEditingStageId(null) : handleStartEdit(stage)}
-                                        >
-                                            {editingStageId === stage.id ? "Recolher" : "Configurar"}
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={() => handleDeleteStage(stage.id)}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </div>
 
-                                <CollapsibleContent className="border-t bg-muted/30 p-4 space-y-4">
-                                    {editingStageId === stage.id && (
-                                        <>
-                                            <div className="grid gap-2">
-                                                <Label className="text-sm font-semibold">Nome da Etapa</Label>
-                                                <Input
-                                                    value={stageFormData.name}
-                                                    onChange={(e) => setStageFormData({ ...stageFormData, name: e.target.value })}
-                                                    placeholder="Ex: Qualificação"
-                                                />
-                                            </div>
-                                            <div className="grid gap-2">
-                                                <Label className="text-sm font-semibold">Objetivo</Label>
-                                                <Textarea
-                                                    value={stageFormData.objective}
-                                                    onChange={(e) => setStageFormData({ ...stageFormData, objective: e.target.value })}
-                                                    placeholder="Ex: Qualificar o lead para saber se tem orçamento"
-                                                    className="min-h-[80px]"
-                                                />
-                                            </div>
-                                            <div className="grid gap-2">
-                                                <Label className="text-sm font-semibold">Critério de Sucesso</Label>
-                                                <Textarea
-                                                    value={stageFormData.success_criteria}
-                                                    onChange={(e) => setStageFormData({ ...stageFormData, success_criteria: e.target.value })}
-                                                    placeholder="Ex: Lead confirmou que tem orçamento disponível"
-                                                    className="min-h-[80px]"
-                                                />
-                                            </div>
-                                            <div className="grid gap-2">
-                                                <Label className="text-sm font-semibold">Status no Kanban</Label>
-                                                <Select
-                                                    value={stageFormData.funnel_status}
-                                                    onValueChange={(value) => setStageFormData({ ...stageFormData, funnel_status: value })}
-                                                >
-                                                    <SelectTrigger>
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {ALL_STATUSES.map(status => (
-                                                            <SelectItem key={status} value={status}>
-                                                                {getStatusLabel(status)}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="flex justify-end gap-2 pt-2">
-                                                <Button onClick={() => setEditingStageId(null)} variant="ghost" size="sm">Cancelar</Button>
-                                                <Button onClick={() => handleSaveStage(stage.id)} size="sm">Salvar Etapa</Button>
-                                            </div>
+                                    <CollapsibleContent className="border-t bg-muted/30 p-4 space-y-4">
+                                        {editingStageId === stage.id && (
+                                            <>
+                                                <div className="grid gap-2">
+                                                    <Label className="text-sm font-semibold">Nome da Etapa</Label>
+                                                    <Input
+                                                        value={stageFormData.name}
+                                                        onChange={(e) => setStageFormData({ ...stageFormData, name: e.target.value })}
+                                                        placeholder="Ex: Qualificação"
+                                                    />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label className="text-sm font-semibold">Objetivo</Label>
+                                                    <Textarea
+                                                        value={stageFormData.objective}
+                                                        onChange={(e) => setStageFormData({ ...stageFormData, objective: e.target.value })}
+                                                        placeholder="Ex: Qualificar o lead para saber se tem orçamento"
+                                                        className="min-h-[80px]"
+                                                    />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label className="text-sm font-semibold">Critério de Sucesso</Label>
+                                                    <Textarea
+                                                        value={stageFormData.success_criteria}
+                                                        onChange={(e) => setStageFormData({ ...stageFormData, success_criteria: e.target.value })}
+                                                        placeholder="Ex: Lead confirmou que tem orçamento disponível"
+                                                        className="min-h-[80px]"
+                                                    />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label className="text-sm font-semibold">Status no Kanban</Label>
+                                                    <Select
+                                                        value={stageFormData.funnel_status}
+                                                        onValueChange={(value) => setStageFormData({ ...stageFormData, funnel_status: value })}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {ALL_STATUSES.map(status => (
+                                                                <SelectItem key={status} value={status}>
+                                                                    {getStatusLabel(status)}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label className="text-sm font-semibold flex items-center gap-2">
+                                                        <Zap className="h-4 w-4 text-blue-500" /> Instruções Extras para a IA
+                                                        <span className="text-xs text-muted-foreground font-normal">(contexto específico desta etapa)</span>
+                                                    </Label>
+                                                    <Textarea
+                                                        value={stageFormData.ia_context}
+                                                        onChange={(e) => setStageFormData({ ...stageFormData, ia_context: e.target.value })}
+                                                        placeholder="Ex: Se o lead mencionar concorrentes, ressalte nossos diferenciais. Não mencione preços ainda."
+                                                        className="min-h-[80px] border-blue-200 focus-visible:ring-blue-400"
+                                                    />
+                                                </div>
+                                                <div className="flex justify-end gap-2 pt-2">
+                                                    <Button onClick={() => setEditingStageId(null)} variant="ghost" size="sm">Cancelar</Button>
+                                                    <Button onClick={() => handleSaveStage(stage.id)} size="sm">Salvar Etapa</Button>
+                                                </div>
 
-                                            <Separator className="my-4" />
+                                                <Separator className="my-4" />
 
-                                            <div className="space-y-4">
-                                                <h4 className="font-semibold text-sm flex items-center gap-2">
-                                                    <Database className="h-4 w-4" /> Variáveis da Etapa
-                                                </h4>
-                                                <div className="space-y-2">
-                                                    {stage.stage_variables?.map((v) => (
-                                                        <div key={v.id} className="flex items-center justify-between p-2 border rounded-md bg-background">
-                                                            <div>
-                                                                <p className="text-sm font-medium">{v.field_name}</p>
-                                                                <p className="text-xs text-muted-foreground">{v.description}</p>
-                                                            </div>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteVariable(v.id)}>
+                                                {/* Opening Message Section */}
+                                                <div className="space-y-3">
+                                                    <h4 className="font-semibold text-sm flex items-center gap-2">
+                                                        <Send className="h-4 w-4 text-green-500" /> Mensagem de Abertura
+                                                        <span className="text-xs text-muted-foreground font-normal">(enviada automaticamente ao entrar nesta etapa)</span>
+                                                    </h4>
+                                                    {openingMsg ? (
+                                                        <div className="flex items-start justify-between p-3 border rounded-md bg-green-50/50 border-green-200">
+                                                            <p className="text-sm flex-1 text-green-800">{openingMsg.message}</p>
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive ml-2 shrink-0" onClick={() => handleDeleteExample(openingMsg.id)}>
                                                                 <Trash2 className="h-4 w-4" />
                                                             </Button>
                                                         </div>
-                                                    ))}
+                                                    ) : (
+                                                        <div className="grid gap-2 p-3 border rounded-md bg-muted/20 border-dashed border-green-300">
+                                                            <Textarea
+                                                                placeholder="Ex: Olá! Agora vou te apresentar nossa solução personalizada. Pode me contar um pouco mais sobre sua empresa?"
+                                                                value={newOpeningMsg}
+                                                                onChange={(e) => setNewOpeningMsg(e.target.value)}
+                                                                className="min-h-[80px] border-green-200 focus-visible:ring-green-400"
+                                                            />
+                                                            <Button onClick={() => handleAddOpeningMsg(stage.id)} size="sm" variant="outline" className="w-full border-green-300 text-green-700 hover:bg-green-50">
+                                                                <Send className="h-4 w-4 mr-2" /> Salvar Mensagem de Abertura
+                                                            </Button>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div className="grid gap-2 p-2 border rounded-md bg-muted/20">
-                                                    <Input
-                                                        placeholder="Nome da variável"
-                                                        value={newVar.name}
-                                                        onChange={(e) => setNewVar({ ...newVar, name: e.target.value })}
-                                                    />
-                                                    <Input
-                                                        placeholder="Descrição"
-                                                        value={newVar.description}
-                                                        onChange={(e) => setNewVar({ ...newVar, description: e.target.value })}
-                                                    />
-                                                    <div className="flex items-center gap-2">
-                                                        <Checkbox
-                                                            checked={newVar.required}
-                                                            onCheckedChange={(checked) => setNewVar({ ...newVar, required: checked as boolean })}
-                                                        />
-                                                        <Label className="text-sm">Obrigatória</Label>
-                                                    </div>
-                                                    <Button onClick={() => handleAddVariable(stage.id)} size="sm" className="w-full">
-                                                        <Plus className="h-4 w-4 mr-2" /> Adicionar Variável
-                                                    </Button>
-                                                </div>
-                                            </div>
 
-                                            <Separator className="my-4" />
+                                                <Separator className="my-4" />
 
-                                            <div className="space-y-3">
-                                                <h4 className="font-semibold text-sm flex items-center gap-2">
-                                                    <MessageSquare className="h-4 w-4" /> Exemplo de Resposta da IA
-                                                </h4>
-                                                <div className="space-y-2">
-                                                    {stage.stage_examples?.filter((ex: any) => ex.role === 'assistant').map((ex: any) => (
-                                                        <div key={ex.id} className="p-2 border rounded-md bg-background">
-                                                            <div className="flex items-start justify-between gap-2">
-                                                                <p className="text-sm flex-1">{ex.message}</p>
-                                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteExample(ex.id)}>
+                                                <div className="space-y-4">
+                                                    <h4 className="font-semibold text-sm flex items-center gap-2">
+                                                        <Database className="h-4 w-4" /> Variáveis da Etapa
+                                                    </h4>
+                                                    <div className="space-y-2">
+                                                        {stage.stage_variables?.map((v) => (
+                                                            <div key={v.id} className="flex items-center justify-between p-2 border rounded-md bg-background">
+                                                                <div className="flex items-center gap-2 flex-1">
+                                                                    <div>
+                                                                        <p className="text-sm font-medium">{v.field_name}</p>
+                                                                        <p className="text-xs text-muted-foreground">{v.description}</p>
+                                                                    </div>
+                                                                    {(v as any).field_type && (v as any).field_type !== 'text' && (
+                                                                        <Badge variant="outline" className="text-xs h-5">
+                                                                            {getFieldTypeLabel((v as any).field_type)}
+                                                                        </Badge>
+                                                                    )}
+                                                                    {v.is_required && (
+                                                                        <Badge variant="destructive" className="text-xs h-5">Obrigatório</Badge>
+                                                                    )}
+                                                                </div>
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteVariable(v.id)}>
                                                                     <Trash2 className="h-4 w-4" />
                                                                 </Button>
                                                             </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="grid gap-2 p-2 border rounded-md bg-muted/20">
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <Input
+                                                                placeholder="Nome da variável (ex: nome_empresa)"
+                                                                value={newVar.name}
+                                                                onChange={(e) => setNewVar({ ...newVar, name: e.target.value })}
+                                                            />
+                                                            <Select
+                                                                value={newVar.field_type}
+                                                                onValueChange={(value) => setNewVar({ ...newVar, field_type: value })}
+                                                            >
+                                                                <SelectTrigger>
+                                                                    <SelectValue placeholder="Tipo" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {FIELD_TYPES.map(ft => (
+                                                                        <SelectItem key={ft.value} value={ft.value}>
+                                                                            {ft.label}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
                                                         </div>
-                                                    ))}
+                                                        <Input
+                                                            placeholder="Descrição (ex: Nome completo da empresa do lead)"
+                                                            value={newVar.description}
+                                                            onChange={(e) => setNewVar({ ...newVar, description: e.target.value })}
+                                                        />
+                                                        <div className="flex items-center gap-2">
+                                                            <Checkbox
+                                                                checked={newVar.required}
+                                                                onCheckedChange={(checked) => setNewVar({ ...newVar, required: checked as boolean })}
+                                                            />
+                                                            <Label className="text-sm">Obrigatória</Label>
+                                                        </div>
+                                                        <Button onClick={() => handleAddVariable(stage.id)} size="sm" className="w-full">
+                                                            <Plus className="h-4 w-4 mr-2" /> Adicionar Variável
+                                                        </Button>
+                                                    </div>
                                                 </div>
-                                                <div className="grid gap-2 p-2 border rounded-md bg-muted/20">
-                                                    <Textarea
-                                                        placeholder="Exemplo de como a IA deve responder nesta etapa..."
-                                                        value={newExample.agent_response}
-                                                        onChange={(e) => setNewExample({ ...newExample, agent_response: e.target.value })}
-                                                        className="min-h-[80px]"
-                                                    />
-                                                    <Button onClick={() => handleAddExample(stage.id)} size="sm" className="w-full">
-                                                        <Plus className="h-4 w-4 mr-2" /> Adicionar Exemplo
-                                                    </Button>
-                                                </div>
-                                            </div>
 
-                                        </>
-                                    )}
-                                </CollapsibleContent>
-                            </Collapsible>
-                        ))}
+                                                <Separator className="my-4" />
+
+                                                <div className="space-y-3">
+                                                    <h4 className="font-semibold text-sm flex items-center gap-2">
+                                                        <MessageSquare className="h-4 w-4" /> Exemplos de Resposta da IA
+                                                        <span className="text-xs text-muted-foreground font-normal">(tom e estilo esperados)</span>
+                                                    </h4>
+                                                    <div className="space-y-2">
+                                                        {(stage.stage_examples as any[])?.filter((ex: any) => ex.role === 'assistant').map((ex: any) => (
+                                                            <div key={ex.id} className="p-2 border rounded-md bg-background">
+                                                                <div className="flex items-start justify-between gap-2">
+                                                                    <p className="text-sm flex-1">{ex.message}</p>
+                                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteExample(ex.id)}>
+                                                                        <Trash2 className="h-4 w-4" />
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="grid gap-2 p-2 border rounded-md bg-muted/20">
+                                                        <Textarea
+                                                            placeholder="Exemplo de como a IA deve responder nesta etapa..."
+                                                            value={newExample.agent_response}
+                                                            onChange={(e) => setNewExample({ ...newExample, agent_response: e.target.value })}
+                                                            className="min-h-[80px]"
+                                                        />
+                                                        <Button onClick={() => handleAddExample(stage.id)} size="sm" className="w-full">
+                                                            <Plus className="h-4 w-4 mr-2" /> Adicionar Exemplo
+                                                        </Button>
+                                                    </div>
+                                                </div>
+
+                                            </>
+                                        )}
+                                    </CollapsibleContent>
+                                </Collapsible>
+                            );
+                        })}
 
                         {sortedStages.length === 0 && !isAdding && (
                             <div className="text-center py-12 border-2 border-dashed rounded-xl bg-muted/10">
