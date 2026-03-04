@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2, Smartphone, Instagram, Zap, Book } from 'lucide-react';
@@ -22,6 +22,12 @@ export const AgentConnectionsTab = ({ agent, onUpdate }: AgentConnectionsTabProp
     const [newChannelId, setNewChannelId] = useState('');
     const { instances: rawInstances } = useWhatsAppInstances();
     const instances = (rawInstances || []) as any[];
+
+    // Limpar os campos quando o agente muda
+    useEffect(() => {
+        setNewTrigger('');
+        setNewChannelId('');
+    }, [agent.id]);
 
     const handleAddTrigger = async () => {
         if (!newTrigger) return;

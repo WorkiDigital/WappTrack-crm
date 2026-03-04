@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2, Save, ChevronDown, ChevronUp, Info, Target, CheckCircle, Database, MessageSquare } from 'lucide-react';
@@ -35,6 +35,17 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
     // Local state for adding variables/examples
     const [newVar, setNewVar] = useState({ name: '', description: '', required: false });
     const [newExample, setNewExample] = useState({ user_input: '', agent_response: '' });
+
+    // Limpar os campos quando o agente muda
+    useEffect(() => {
+        setIsAdding(false);
+        setNewStageName('');
+        setNewStageFunnelStatus('new');
+        setEditingStageId(null);
+        setStageFormData({ name: '', objective: '', success_criteria: '', funnel_status: 'new' });
+        setNewVar({ name: '', description: '', required: false });
+        setNewExample({ user_input: '', agent_response: '' });
+    }, [agent.id]);
 
     const handleAddStage = async () => {
         if (!newStageName) return;
@@ -234,7 +245,7 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                         <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                            className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                                             onClick={() => handleDeleteStage(stage.id)}
                                         >
                                             <Trash2 className="h-4 w-4" />
@@ -242,32 +253,43 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                     </div>
                                 </div>
 
-                                <CollapsibleContent>
-                                    <div className="p-6 border-t bg-muted/20 space-y-6 animate-in slide-in-from-top-2">
-                                        {/* Basic Info */}
-                                        <div className="grid gap-4 sm:grid-cols-2">
+                                <CollapsibleContent className="border-t bg-muted/30 p-4 space-y-4">
+                                    {editingStageId === stage.id && (
+                                        <>
                                             <div className="grid gap-2">
-                                                <Label className="flex items-center gap-2 italic"><Target className="h-3 w-3" /> Nome da Etapa</Label>
+                                                <Label className="text-sm font-semibold">Nome da Etapa</Label>
                                                 <Input
                                                     value={stageFormData.name}
                                                     onChange={(e) => setStageFormData({ ...stageFormData, name: e.target.value })}
+                                                    placeholder="Ex: Qualificação"
                                                 />
                                             </div>
                                             <div className="grid gap-2">
-                                                <Label className="flex items-center gap-2 italic"><Info className="h-3 w-3" /> Objetivo</Label>
-                                                <Input
+                                                <Label className="text-sm font-semibold">Objetivo</Label>
+                                                <Textarea
                                                     value={stageFormData.objective}
                                                     onChange={(e) => setStageFormData({ ...stageFormData, objective: e.target.value })}
+                                                    placeholder="Ex: Qualificar o lead para saber se tem orçamento"
+                                                    className="min-h-[80px]"
                                                 />
                                             </div>
                                             <div className="grid gap-2">
-                                                <Label className="flex items-center gap-2 italic"><Target className="h-3 w-3" /> Status no Kanban</Label>
+                                                <Label className="text-sm font-semibold">Critério de Sucesso</Label>
+                                                <Textarea
+                                                    value={stageFormData.success_criteria}
+                                                    onChange={(e) => setStageFormData({ ...stageFormData, success_criteria: e.target.value })}
+                                                    placeholder="Ex: Lead confirmou que tem orçamento disponível"
+                                                    className="min-h-[80px]"
+                                                />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label className="text-sm font-semibold">Status no Kanban</Label>
                                                 <Select
                                                     value={stageFormData.funnel_status}
-                                                    onValueChange={(v) => setStageFormData({ ...stageFormData, funnel_status: v })}
+                                                    onValueChange={(value) => setStageFormData({ ...stageFormData, funnel_status: value })}
                                                 >
-                                                    <SelectTrigger className="h-9">
-                                                        <SelectValue placeholder="Selecione o status..." />
+                                                    <SelectTrigger>
+                                                        <SelectValue />
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {ALL_STATUSES.map(status => (
@@ -278,131 +300,102 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                                     </SelectContent>
                                                 </Select>
                                             </div>
-                                        </div>
+                                            <div className="flex justify-end gap-2 pt-2">
+                                                <Button onClick={() => setEditingStageId(null)} variant="ghost" size="sm">Cancelar</Button>
+                                                <Button onClick={() => handleSaveStage(stage.id)} size="sm">Salvar Etapa</Button>
+                                            </div>
 
-                                        <div className="grid gap-2">
-                                            <Label className="flex items-center gap-2 italic"><CheckCircle className="h-3 w-3" /> Critérios de Sucesso (para avançar)</Label>
-                                            <Textarea
-                                                value={stageFormData.success_criteria}
-                                                onChange={(e) => setStageFormData({ ...stageFormData, success_criteria: e.target.value })}
-                                                placeholder="Ex: O lead informou o nome e o interesse principal."
-                                                className="min-h-[60px]"
-                                            />
-                                        </div>
+                                            <Separator className="my-4" />
 
-                                        <div className="flex justify-end">
-                                            <Button size="sm" onClick={() => handleSaveStage(stage.id)}><Save className="mr-2 h-4 w-4" /> Salvar Configurações Básicas</Button>
-                                        </div>
-
-                                        <Separator />
-
-                                        {/* Variables Management */}
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <h4 className="flex items-center gap-2 font-bold text-sm uppercase tracking-wider text-muted-foreground">
-                                                    <Database className="h-4 w-4" /> Variáveis para Coletar
+                                            <div className="space-y-4">
+                                                <h4 className="font-semibold text-sm flex items-center gap-2">
+                                                    <Database className="h-4 w-4" /> Variáveis da Etapa
                                                 </h4>
-                                            </div>
-                                            <div className="grid gap-3">
-                                                {stage.stage_variables?.map(v => (
-                                                    <div key={v.id} className="flex items-center justify-between p-3 bg-background rounded-lg border shadow-sm">
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="font-bold">{v.field_name || (v as any).name}</span>
-                                                                {(v.is_required || (v as any).required) && <Badge variant="secondary" className="text-[10px]">Obrigatório</Badge>}
+                                                <div className="space-y-2">
+                                                    {stage.stage_variables?.map((v) => (
+                                                        <div key={v.id} className="flex items-center justify-between p-2 border rounded-md bg-background">
+                                                            <div>
+                                                                <p className="text-sm font-medium">{v.field_name}</p>
+                                                                <p className="text-xs text-muted-foreground">{v.description}</p>
                                                             </div>
-                                                            <p className="text-xs text-muted-foreground">{v.description}</p>
-                                                        </div>
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteVariable(v.id)}>
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </Button>
-                                                    </div>
-                                                ))}
-                                                <div className="grid gap-3 p-4 border border-dashed rounded-lg bg-background/50">
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <Input
-                                                            placeholder="Nome (ex: nome_completo)"
-                                                            value={newVar.name}
-                                                            onChange={(e) => setNewVar({ ...newVar, name: e.target.value })}
-                                                            className="h-8 text-sm"
-                                                        />
-                                                        <Input
-                                                            placeholder="Descrição (ex: Nome do lead)"
-                                                            value={newVar.description}
-                                                            onChange={(e) => setNewVar({ ...newVar, description: e.target.value })}
-                                                            className="h-8 text-sm"
-                                                        />
-                                                    </div>
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <Checkbox
-                                                                id={`req-${stage.id}`}
-                                                                checked={newVar.required}
-                                                                onCheckedChange={(checked) => setNewVar({ ...newVar, required: !!checked })}
-                                                            />
-                                                            <Label htmlFor={`req-${stage.id}`} className="text-xs">Obrigatório para avançar</Label>
-                                                        </div>
-                                                        <Button size="sm" variant="outline" className="h-8" onClick={() => handleAddVariable(stage.id)}>
-                                                            <Plus className="mr-1 h-3 w-3" /> Adicionar Variável
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <Separator />
-
-                                        {/* Examples Management */}
-                                        <div className="space-y-4">
-                                            <h4 className="flex items-center gap-2 font-bold text-sm uppercase tracking-wider text-muted-foreground">
-                                                <MessageSquare className="h-4 w-4" /> Exemplos de Interação (Few-shot)
-                                            </h4>
-                                            <div className="grid gap-4">
-                                                {stage.stage_examples?.map((ex, idx) => (
-                                                    <div key={ex.id} className="space-y-2 p-3 bg-background rounded-lg border shadow-sm">
-                                                        <div className="flex justify-between items-start gap-4">
-                                                            <div className="flex-1 space-y-2">
-                                                                <div className="flex gap-2">
-                                                                    <Badge variant={ex.role === 'user' ? "outline" : "default"} className="h-fit">
-                                                                        {ex.role === 'user' ? "Lead" : "Agente"}
-                                                                    </Badge>
-                                                                    <p className="text-sm italic">"{ex.message}"</p>
-                                                                </div>
-                                                            </div>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteExample(ex.id)}>
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteVariable(v.id)}>
                                                                 <Trash2 className="h-4 w-4" />
                                                             </Button>
                                                         </div>
+                                                    ))}
+                                                </div>
+                                                <div className="grid gap-2 p-2 border rounded-md bg-muted/20">
+                                                    <Input
+                                                        placeholder="Nome da variável"
+                                                        value={newVar.name}
+                                                        onChange={(e) => setNewVar({ ...newVar, name: e.target.value })}
+                                                    />
+                                                    <Input
+                                                        placeholder="Descrição"
+                                                        value={newVar.description}
+                                                        onChange={(e) => setNewVar({ ...newVar, description: e.target.value })}
+                                                    />
+                                                    <div className="flex items-center gap-2">
+                                                        <Checkbox
+                                                            checked={newVar.required}
+                                                            onCheckedChange={(checked) => setNewVar({ ...newVar, required: checked as boolean })}
+                                                        />
+                                                        <Label className="text-sm">Obrigatória</Label>
                                                     </div>
-                                                ))}
-                                                <div className="grid gap-3 p-4 border border-dashed rounded-lg bg-background/50">
-                                                    <Textarea
-                                                        placeholder="Input do usuário..."
-                                                        value={newExample.user_input}
-                                                        onChange={(e) => setNewExample({ ...newExample, user_input: e.target.value })}
-                                                        className="text-sm min-h-[60px]"
-                                                    />
-                                                    <Textarea
-                                                        placeholder="Resposta ideal do agente..."
-                                                        value={newExample.agent_response}
-                                                        onChange={(e) => setNewExample({ ...newExample, agent_response: e.target.value })}
-                                                        className="text-sm min-h-[60px]"
-                                                    />
-                                                    <Button size="sm" variant="outline" className="w-fit ml-auto" onClick={() => handleAddExample(stage.id)}>
-                                                        <Plus className="mr-1 h-3 w-3" /> Adicionar Exemplo
+                                                    <Button onClick={() => handleAddVariable(stage.id)} size="sm" className="w-full">
+                                                        <Plus className="h-4 w-4 mr-2" /> Adicionar Variável
                                                     </Button>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </div>
+
+                                            <Separator className="my-4" />
+
+                                            <div className="space-y-4">
+                                                <h4 className="font-semibold text-sm flex items-center gap-2">
+                                                    <MessageSquare className="h-4 w-4" /> Exemplos de Conversa
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {stage.stage_examples?.map((ex) => (
+                                                        <div key={ex.id} className="p-2 border rounded-md bg-background">
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <div className="flex-1">
+                                                                    <Badge variant="outline" className="mb-1">{ex.role}</Badge>
+                                                                    <p className="text-sm">{ex.message}</p>
+                                                                </div>
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteExample(ex.id)}>
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="grid gap-2 p-2 border rounded-md bg-muted/20">
+                                                    <Textarea
+                                                        placeholder="Mensagem do usuário"
+                                                        value={newExample.user_input}
+                                                        onChange={(e) => setNewExample({ ...newExample, user_input: e.target.value })}
+                                                        className="min-h-[60px]"
+                                                    />
+                                                    <Textarea
+                                                        placeholder="Resposta do agente"
+                                                        value={newExample.agent_response}
+                                                        onChange={(e) => setNewExample({ ...newExample, agent_response: e.target.value })}
+                                                        className="min-h-[60px]"
+                                                    />
+                                                    <Button onClick={() => handleAddExample(stage.id)} size="sm" className="w-full">
+                                                        <Plus className="h-4 w-4 mr-2" /> Adicionar Exemplo
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
                                 </CollapsibleContent>
                             </Collapsible>
                         ))}
 
                         {sortedStages.length === 0 && !isAdding && (
                             <div className="text-center py-12 border-2 border-dashed rounded-xl bg-muted/10">
-                                <p className="text-muted-foreground">Nenhuma etapa configurada.</p>
-                                <Button variant="link" onClick={() => setIsAdding(true)}>Comece adicionando a primeira etapa</Button>
+                                <p className="text-muted-foreground">Nenhuma etapa configurada. Comece adicionando uma!</p>
                             </div>
                         )}
                     </div>

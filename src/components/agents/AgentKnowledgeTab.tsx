@@ -39,6 +39,12 @@ export const AgentKnowledgeTab = ({ agent, onUpdate }: AgentKnowledgeTabProps) =
         fetchData();
     }, []);
 
+    // Limpar os campos quando o agente muda
+    useEffect(() => {
+        setNewKB({ name: '', content: '' });
+        setIsAdding(false);
+    }, [agent.id]);
+
     const handleCreateKB = async () => {
         if (!newKB.name || !newKB.content) return;
         try {

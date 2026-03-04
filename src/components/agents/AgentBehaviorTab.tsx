@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,16 @@ export const AgentBehaviorTab = ({ agent, onUpdate }: AgentBehaviorTabProps) => 
         function: agent.function || '',
         behavior_rules: agent.behavior_rules || '',
     });
+
+    // Sincronizar o formulário quando o agente muda
+    useEffect(() => {
+        setFormData({
+            name: agent.name || '',
+            persona_name: agent.persona_name || '',
+            function: agent.function || '',
+            behavior_rules: agent.behavior_rules || '',
+        });
+    }, [agent.id, agent.name, agent.persona_name, agent.function, agent.behavior_rules]);
 
     const handleSave = async () => {
         try {
