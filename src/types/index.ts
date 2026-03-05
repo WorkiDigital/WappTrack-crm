@@ -64,6 +64,11 @@ export interface Lead {
   agent_id?: string;
   current_stage_id?: string;
   collected_variables?: Record<string, any>;
+  // Pipeline fields
+  pipeline_id?: string;
+  pipeline_stage_id?: string;
+  pipeline_stage_name?: string;
+  pipeline_stage_color?: string;
 }
 
 export interface Campaign {

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Fragment } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -16,7 +17,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import DeviceInfoDisplay from './DeviceInfoDisplay';
 import { LeadStatusBadge } from './LeadStatusBadge';
-import { FUNNEL_STATUSES, ALL_STATUSES } from '@/constants/funnelStatuses';
+import { usePipelines } from '@/hooks/usePipelines';
 import { agentService } from '@/services/agentService';
 import { AgentWithRelations } from '@/types/agent';
 import { Bot, RefreshCw, Layers, Database, ChevronRight } from 'lucide-react';
@@ -32,6 +33,7 @@ interface LeadDetailDialogProps {
 }
 
 const LeadDetailDialog = ({ lead, isOpen, onClose, onSave, onOpenWhatsApp }: LeadDetailDialogProps) => {
+  const { pipelines } = usePipelines();
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Lead>>({});
   const [agents, setAgents] = useState<AgentWithRelations[]>([]);
@@ -223,28 +225,47 @@ const LeadDetailDialog = ({ lead, isOpen, onClose, onSave, onOpenWhatsApp }: Lea
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
+                    <Label htmlFor="pipeline_stage_id">Etapa do Pipeline</Label>
                     {isEditing ? (
                       <Select
-                        value={editData.status || lead.status}
-                        onValueChange={(value: Lead['status']) => setEditData({ ...editData, status: value })}
+                        value={editData.pipeline_stage_id || (lead as any).pipeline_stage_id || ''}
+                        onValueChange={(stageId) => {
+                          const stage = pipelines.flatMap(p => p.stages || []).find(s => s.id === stageId);
+                          if (stage) setEditData({
+                            ...editData,
+                            pipeline_stage_id: stage.id,
+                            pipeline_id: stage.pipeline_id,
+                            status: stage.maps_to_status as Lead['status'],
+                          });
+                        }}
                       >
                         <SelectTrigger>
-                          <SelectValue />
+                          <SelectValue placeholder="Selecione uma etapa" />
                         </SelectTrigger>
                         <SelectContent>
-                          {ALL_STATUSES.map((status) => {
-                            const config = FUNNEL_STATUSES[status];
-                            return (
-                              <SelectItem key={status} value={status}>
-                                {config.label}
-                              </SelectItem>
-                            );
-                          })}
+                          {pipelines.map((pipeline) => (
+                            <Fragment key={pipeline.id}>
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground border-b bg-muted/40">
+                                {pipeline.name}
+                              </div>
+                              {(pipeline.stages || []).map((stage) => (
+                                <SelectItem key={stage.id} value={stage.id}>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
+                                    {stage.name}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </Fragment>
+                          ))}
                         </SelectContent>
                       </Select>
                     ) : (
-                      <LeadStatusBadge status={lead.status} />
+                      <LeadStatusBadge
+                        status={lead.status}
+                        stageName={(lead as any).pipeline_stage_name}
+                        stageColor={(lead as any).pipeline_stage_color}
+                      />
                     )}
                   </div>
 

@@ -37,6 +37,7 @@ const Leads = () => {
     handleInputChange,
     handlePhoneChange,
     handleSelectChange,
+    handlePipelineStageChange,
     handleOpenAddDialog,
     handleOpenEditDialog,
     handleOpenViewDialog,
@@ -50,10 +51,10 @@ const Leads = () => {
     setSelectedLeads
   } = useLeadOperations(leads, setLeads);
 
-  const { 
-    handleBulkDelete, 
-    handleBulkStatusUpdate, 
-    handleExportCSV 
+  const {
+    handleBulkDelete,
+    handleBulkStageUpdate,
+    handleExportCSV
   } = useBulkLeadOperations(leads, setLeads, selectedLeads, setSelectedLeads);
 
   const fetchData = async () => {
@@ -214,7 +215,7 @@ const Leads = () => {
                 selectedLeads={selectedLeads}
                 leads={filteredLeads}
                 onDeleteSelected={handleBulkDelete}
-                onUpdateStatus={handleBulkStatusUpdate}
+                onUpdateStage={handleBulkStageUpdate}
                 onExportCSV={handleExportCSV}
               />
               <LeadsTable
@@ -242,6 +243,7 @@ const Leads = () => {
           onInputChange={handleInputChange}
           onPhoneChange={handlePhoneChange}
           onSelectChange={handleSelectChange}
+          onPipelineStageChange={handlePipelineStageChange}
         />
 
         <LeadDetailDialog

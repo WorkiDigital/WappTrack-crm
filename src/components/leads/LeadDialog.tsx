@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { Fragment } from 'react';
 import { Lead, Campaign } from '@/types';
+import { PipelineStage } from '@/types/pipeline';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from '@/components/ui/textarea';
-import { FUNNEL_STATUSES, ALL_STATUSES } from '@/constants/funnelStatuses';
+import { usePipelines } from '@/hooks/usePipelines';
 
 interface LeadDialogProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface LeadDialogProps {
   onInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   onPhoneChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSelectChange: (name: string, value: string) => void;
+  onPipelineStageChange: (stage: PipelineStage) => void;
 }
 
 const LeadDialog: React.FC<LeadDialogProps> = ({
@@ -29,8 +31,11 @@ const LeadDialog: React.FC<LeadDialogProps> = ({
   onSave,
   onInputChange,
   onPhoneChange,
-  onSelectChange
+  onSelectChange,
+  onPipelineStageChange
 }) => {
+  const { pipelines } = usePipelines();
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
@@ -77,8 +82,8 @@ const LeadDialog: React.FC<LeadDialogProps> = ({
           </div>
           <div className="grid gap-2">
             <Label htmlFor="campaign">Campanha</Label>
-            <Select 
-              value={currentLead.campaign || ''} 
+            <Select
+              value={currentLead.campaign || ''}
               onValueChange={(value) => onSelectChange('campaign', value)}
             >
               <SelectTrigger>
@@ -94,23 +99,33 @@ const LeadDialog: React.FC<LeadDialogProps> = ({
             </Select>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="status">Status</Label>
-            <Select 
-              value={currentLead.status || ''} 
-              onValueChange={(value) => onSelectChange('status', value as Lead['status'])}
+            <Label htmlFor="pipeline_stage_id">Etapa do Pipeline</Label>
+            <Select
+              value={currentLead.pipeline_stage_id || ''}
+              onValueChange={(stageId) => {
+                const stage = pipelines.flatMap(p => p.stages || []).find(s => s.id === stageId);
+                if (stage) onPipelineStageChange(stage);
+              }}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Selecione um status" />
+                <SelectValue placeholder={pipelines.length === 0 ? 'Crie um pipeline primeiro' : 'Selecione uma etapa'} />
               </SelectTrigger>
               <SelectContent>
-                {ALL_STATUSES.map((status) => {
-                  const config = FUNNEL_STATUSES[status];
-                  return (
-                    <SelectItem key={status} value={status}>
-                      {config.label}
-                    </SelectItem>
-                  );
-                })}
+                {pipelines.map((pipeline) => (
+                  <Fragment key={pipeline.id}>
+                    <div className="px-2 py-1 text-xs font-semibold text-muted-foreground border-b bg-muted/40">
+                      {pipeline.name}
+                    </div>
+                    {(pipeline.stages || []).map((stage) => (
+                      <SelectItem key={stage.id} value={stage.id}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
+                          {stage.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </Fragment>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -156,7 +171,6 @@ const LeadDialog: React.FC<LeadDialogProps> = ({
               placeholder="Observações sobre o lead"
             />
           </div>
-          {/* Se existirem dados UTM, mostrar seção */}
           {(currentLead.utm_source ||
             currentLead.utm_medium ||
             currentLead.utm_campaign ||

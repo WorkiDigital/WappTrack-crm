@@ -6,10 +6,10 @@ export const getLeads = async (): Promise<Lead[]> => {
   try {
     console.log('🔄 leadService.getLeads() - Iniciando busca...');
 
-    // Fetch leads from Supabase
+    // Fetch leads from Supabase (join pipeline stage for name/color)
     const { data: leads, error } = await supabase
       .from('leads')
-      .select('*')
+      .select('*, pipeline_stage:pipeline_stages!pipeline_stage_id(id,name,color)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -70,7 +70,12 @@ export const getLeads = async (): Promise<Lead[]> => {
         user_id: lead.user_id,
         agent_id: lead.agent_id,
         current_stage_id: lead.current_stage_id,
-        collected_variables: (lead.collected_variables || {}) as Record<string, any>
+        collected_variables: (lead.collected_variables || {}) as Record<string, any>,
+        // Pipeline fields
+        pipeline_id: lead.pipeline_id,
+        pipeline_stage_id: lead.pipeline_stage_id,
+        pipeline_stage_name: (lead.pipeline_stage as any)?.name,
+        pipeline_stage_color: (lead.pipeline_stage as any)?.color,
       };
     });
 

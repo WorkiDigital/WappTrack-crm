@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Lead, Campaign } from '@/types';
+import { PipelineStage } from '@/types/pipeline';
 import { addLead, updateLead, deleteLead } from '@/services/dataService';
 import { formatBrazilianPhone, processBrazilianPhone, validateBrazilianPhone } from '@/lib/phoneUtils';
 import { correctPhoneNumber, shouldCorrectPhone } from '@/lib/phoneCorrection';
@@ -43,6 +44,15 @@ export const useLeadOperations = (leads: Lead[], setLeads: React.Dispatch<React.
 
   const handleSelectChange = (name: string, value: string) => {
     setCurrentLead({ ...currentLead, [name]: value });
+  };
+
+  const handlePipelineStageChange = (stage: PipelineStage) => {
+    setCurrentLead(prev => ({
+      ...prev,
+      pipeline_stage_id: stage.id,
+      pipeline_id: stage.pipeline_id,
+      status: stage.maps_to_status as Lead['status'],
+    }));
   };
 
   const handleOpenAddDialog = () => {
@@ -125,7 +135,7 @@ export const useLeadOperations = (leads: Lead[], setLeads: React.Dispatch<React.
 
   const handleSaveLead = async () => {
     try {
-      if (!currentLead.name || !currentLead.phone || !currentLead.campaign || !currentLead.status) {
+      if (!currentLead.name || !currentLead.phone || !currentLead.campaign || !currentLead.pipeline_stage_id) {
         toast.error('Preencha todos os campos obrigatórios');
         return;
       }
@@ -279,6 +289,7 @@ export const useLeadOperations = (leads: Lead[], setLeads: React.Dispatch<React.
     handleInputChange,
     handlePhoneChange,
     handleSelectChange,
+    handlePipelineStageChange,
     handleOpenAddDialog,
     handleOpenEditDialog,
     handleOpenViewDialog,

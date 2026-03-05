@@ -1,6 +1,8 @@
 
 import { Lead } from '@/types';
-import { updateLead, deleteLead } from '@/services/dataService';
+import { PipelineStage } from '@/types/pipeline';
+import { deleteLead } from '@/services/dataService';
+import { pipelineService } from '@/services/pipelineService';
 import { toast } from "sonner";
 import { format } from 'date-fns';
 
@@ -30,39 +32,34 @@ export const useBulkLeadOperations = (
     }
   };
 
-  const handleBulkStatusUpdate = async (newStatus: string) => {
+  const handleBulkStageUpdate = async (stage: PipelineStage) => {
     if (selectedLeads.length === 0) return;
 
-    const statusLabels: Record<string, string> = {
-      'new': 'Novo',
-      'contacted': 'Contactado',
-      'negotiating': 'Em Negociação',
-      'converted': 'Convertido',
-      'cancelled': 'Cancelado'
-    };
-
-    const confirmMessage = `Marcar ${selectedLeads.length} lead(s) como "${statusLabels[newStatus] || newStatus}"?`;
-    if (!window.confirm(confirmMessage)) {
+    if (!window.confirm(`Mover ${selectedLeads.length} lead(s) para "${stage.name}"?`)) {
       return;
     }
 
     try {
-      const updatePromises = selectedLeads.map(id => 
-        updateLead(id, { status: newStatus as Lead['status'] })
-      );
-      
-      const updatedLeads = await Promise.all(updatePromises);
-      
-      setLeads(leads.map(lead => {
-        const updated = updatedLeads.find(u => u.id === lead.id);
-        return updated || lead;
-      }));
-      
+      await Promise.all(selectedLeads.map(id => pipelineService.moveLeadToStage(id, stage)));
+
+      setLeads(leads.map(lead =>
+        selectedLeads.includes(lead.id)
+          ? {
+              ...lead,
+              pipeline_stage_id: stage.id,
+              pipeline_id: stage.pipeline_id,
+              status: stage.maps_to_status as Lead['status'],
+              pipeline_stage_name: stage.name,
+              pipeline_stage_color: stage.color,
+            }
+          : lead
+      ));
+
       setSelectedLeads([]);
-      toast.success(`${selectedLeads.length} lead(s) atualizado(s) para "${statusLabels[newStatus]}"`);
+      toast.success(`${selectedLeads.length} lead(s) movido(s) para "${stage.name}"`);
     } catch (error) {
-      console.error('Error updating leads status:', error);
-      toast.error('Erro ao atualizar status dos leads');
+      console.error('Error updating leads stage:', error);
+      toast.error('Erro ao mover leads');
     }
   };
 
@@ -143,7 +140,7 @@ export const useBulkLeadOperations = (
 
   return {
     handleBulkDelete,
-    handleBulkStatusUpdate,
+    handleBulkStageUpdate,
     handleExportCSV
   };
 };
