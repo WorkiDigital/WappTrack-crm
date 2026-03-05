@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Lead } from '@/types';
@@ -124,7 +124,7 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -432,19 +432,25 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
           </div>
         )}
 
-        <div className="flex gap-2 items-end">
+        <div className="flex gap-2 items-end min-h-[40px]">
           <MediaInput
             onEmojiSelect={handleEmojiSelect}
             onMediaSelect={handleMediaSelect}
             disabled={sending}
           />
-          <Input
-            placeholder="Digite sua mensagem..."
+          <Textarea
+            placeholder="Digite sua mensagem... (Enter para enviar, Shift+Enter para nova linha)"
             value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onChange={(e) => {
+              setInputMessage(e.target.value);
+              // auto-resize
+              e.target.style.height = 'auto';
+              e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+            }}
+            onKeyDown={handleKeyDown}
             disabled={sending}
-            className="flex-1"
+            rows={1}
+            className="flex-1 resize-none overflow-y-auto min-h-[40px] max-h-[160px] py-2"
           />
           <Button
             onClick={handleSend}
