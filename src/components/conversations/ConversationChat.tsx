@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Send, MessageCircle, Loader2, Image as ImageIcon, Video, Volume2, X, Phone, ChevronDown, FileText, Download, Check, CheckCheck, Bot, Sparkles, Info, Settings } from 'lucide-react';
 import LeadDetailDialog from '@/components/leads/LeadDetailDialog';
+import { AudioPlayer } from './AudioPlayer';
 import { agentService } from '@/services/agentService';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -309,15 +310,13 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
                     </div>
                   )}
 
-                  {message.media_type === 'audio' && message.media_url && (
-                    <div className="mb-2 p-1">
-                      <audio
-                        src={message.media_url}
-                        controls
-                        className={cn(
-                          "w-full h-10",
-                          message.is_from_me ? "invert grayscale contrast-200" : ""
-                        )}
+                  {message.media_type === 'audio' && (
+                    <div className="mb-1">
+                      <AudioPlayer
+                        src={message.media_url && message.media_url !== 'BASE64_SENT'
+                          ? message.media_url
+                          : null}
+                        isFromMe={message.is_from_me}
                       />
                     </div>
                   )}
