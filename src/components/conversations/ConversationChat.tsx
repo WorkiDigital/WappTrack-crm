@@ -39,7 +39,7 @@ interface ConversationChatProps {
 }
 
 export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLeadUpdate }) => {
-  const { messages, loading, sending, sendMessage, sendMediaMessage } = useLeadChat(
+  const { messages, loading, sending, sendMessage, sendMediaMessage, getInstanceName } = useLeadChat(
     lead?.id || '',
     lead?.phone || ''
   );
@@ -49,6 +49,8 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isUpdatingAI, setIsUpdatingAI] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
 
   const allStatuses: FunnelStatus[] = [...ACTIVE_FUNNEL_STATUSES, ...FINAL_STATUSES];
 
@@ -63,7 +65,32 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
   useEffect(() => {
     setInputMessage('');
     setMediaPreview(null);
+    isTypingRef.current = false;
   }, [lead?.id]);
+
+  const sendPresence = async (presence: 'composing' | 'paused') => {
+    if (!lead) return;
+    try {
+      const instanceName = await getInstanceName();
+      if (!instanceName) return;
+      await supabase.functions.invoke('evolution-set-presence', {
+        body: { instanceName, phone: lead.phone.replace(/\D/g, ''), presence },
+      });
+    } catch { /* silently ignore presence errors */ }
+  };
+
+  const handleTyping = () => {
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      sendPresence('composing');
+    }
+    // Reinicia o timer a cada tecla — para após 4s sem digitar
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      isTypingRef.current = false;
+      sendPresence('paused');
+    }, 4000);
+  };
 
   const handleStatusChange = async (newStatus: FunnelStatus) => {
     if (!lead || lead.status === newStatus) return;
@@ -114,6 +141,9 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
 
   const handleSend = async () => {
     if (sending || !lead) return;
+    // Para o indicador de digitação imediatamente
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    if (isTypingRef.current) { isTypingRef.current = false; sendPresence('paused'); }
 
     if (mediaPreview) {
       await sendMediaMessage(mediaPreview.file, mediaPreview.type, inputMessage || undefined);
@@ -445,6 +475,7 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
               // auto-resize
               e.target.style.height = 'auto';
               e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+              if (e.target.value.trim()) handleTyping();
             }}
             onKeyDown={handleKeyDown}
             disabled={sending}

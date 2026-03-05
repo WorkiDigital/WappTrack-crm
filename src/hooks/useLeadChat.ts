@@ -308,6 +308,7 @@ export const useLeadChat = (leadId: string, leadPhone: string) => {
     sending,
     sendMessage,
     sendMediaMessage,
+    getInstanceName: getCachedInstance,
   };
 };
 
