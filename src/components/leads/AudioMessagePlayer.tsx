@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -8,6 +8,7 @@ interface AudioMessagePlayerProps {
 }
 
 const SPEED_STEPS = [1, 1.5, 2];
+const BAR_COUNT = 40;
 
 function formatTime(seconds: number): string {
     if (!isFinite(seconds) || isNaN(seconds)) return '0:00';
@@ -16,31 +17,45 @@ function formatTime(seconds: number): string {
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+/** Deterministic pseudo-random bar heights from the src URL */
+function generateBars(seed: string): number[] {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+        hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+    }
+    return Array.from({ length: BAR_COUNT }, (_, i) => {
+        const v = Math.abs(Math.sin(hash * 0.003 + i * 0.47) * 0.6 + Math.sin(i * 0.21 + hash * 0.07) * 0.4);
+        // Clamp to [0.15, 1.0]
+        return 0.15 + Math.abs(v) * 0.85;
+    });
+}
+
 export const AudioMessagePlayer = ({ src, isFromMe }: AudioMessagePlayerProps) => {
     const audioRef = useRef<HTMLAudioElement>(null);
-    const trackRef = useRef<HTMLDivElement>(null);
+    const waveRef = useRef<HTMLDivElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [speedIdx, setSpeedIdx] = useState(0);
 
     const speed = SPEED_STEPS[speedIdx];
-    const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+    const progress = duration > 0 ? currentTime / duration : 0;
+    const bars = useMemo(() => generateBars(src), [src]);
 
     const togglePlay = useCallback(() => {
         const audio = audioRef.current;
         if (!audio) return;
         if (isPlaying) audio.pause();
-        else audio.play();
+        else audio.play().catch(() => {});
     }, [isPlaying]);
 
-    const handleTrackClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const handleWaveClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         const audio = audioRef.current;
-        const track = trackRef.current;
-        if (!audio || !track || !duration) return;
-        const rect = track.getBoundingClientRect();
-        const ratio = (e.clientX - rect.left) / rect.width;
-        audio.currentTime = Math.max(0, Math.min(ratio * duration, duration));
+        const wave = waveRef.current;
+        if (!audio || !wave || !duration) return;
+        const rect = wave.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
+        audio.currentTime = ratio * duration;
     }, [duration]);
 
     const cycleSpeed = useCallback(() => {
@@ -71,70 +86,72 @@ export const AudioMessagePlayer = ({ src, isFromMe }: AudioMessagePlayerProps) =
         };
     }, []);
 
-    const trackBg = isFromMe ? 'bg-white/25' : 'bg-black/15';
-    const rangeBg = isFromMe ? 'bg-white' : 'bg-foreground';
-    const thumbBg = isFromMe ? 'bg-white' : 'bg-foreground';
-    const textMuted = isFromMe ? 'text-white/70' : 'text-muted-foreground';
-    const btnBg = isFromMe ? 'bg-white/20 hover:bg-white/30' : 'bg-black/10 hover:bg-black/20';
+    // Colors based on bubble side
+    const playBtnClass = isFromMe
+        ? 'bg-white/25 hover:bg-white/35 text-white'
+        : 'bg-emerald-500 hover:bg-emerald-600 text-white';
+
+    const barFilled = isFromMe ? 'bg-white' : 'bg-emerald-500';
+    const barEmpty = isFromMe ? 'bg-white/30' : 'bg-muted-foreground/25';
+    const timeColor = isFromMe ? 'text-white/65' : 'text-muted-foreground';
 
     return (
-        <div className="flex items-center gap-2 min-w-[220px]">
+        <div className="flex items-center gap-2.5 w-[240px]">
             <audio ref={audioRef} src={src} preload="metadata" />
 
-            {/* Play/Pause */}
+            {/* ── Play / Pause button ── */}
             <button
                 onClick={togglePlay}
                 className={cn(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
-                    btnBg
+                    'h-10 w-10 shrink-0 flex items-center justify-center rounded-full transition-colors',
+                    playBtnClass
                 )}
             >
                 {isPlaying
-                    ? <Pause className={cn('h-4 w-4 fill-current', isFromMe ? 'text-white' : 'text-foreground')} />
-                    : <Play className={cn('h-4 w-4 fill-current ml-0.5', isFromMe ? 'text-white' : 'text-foreground')} />
+                    ? <Pause className="h-4 w-4 fill-current" />
+                    : <Play className="h-4 w-4 fill-current translate-x-px" />
                 }
             </button>
 
-            {/* Track area */}
+            {/* ── Waveform + meta ── */}
             <div className="flex flex-1 flex-col gap-1 min-w-0">
-                {/* Progress bar */}
+                {/* Bars */}
                 <div
-                    ref={trackRef}
-                    className={cn('relative h-1.5 w-full rounded-full cursor-pointer', trackBg)}
-                    onClick={handleTrackClick}
+                    ref={waveRef}
+                    className="flex items-center gap-px h-8 cursor-pointer"
+                    onClick={handleWaveClick}
                 >
-                    <div
-                        className={cn('absolute left-0 top-0 h-full rounded-full transition-all', rangeBg)}
-                        style={{ width: `${progress}%` }}
-                    />
-                    {/* Thumb dot */}
-                    <div
-                        className={cn('absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full shadow', thumbBg)}
-                        style={{ left: `${progress}%` }}
-                    />
+                    {bars.map((h, i) => {
+                        const filled = i / BAR_COUNT <= progress;
+                        return (
+                            <div
+                                key={i}
+                                className={cn(
+                                    'rounded-full flex-1 transition-colors duration-75',
+                                    filled ? barFilled : barEmpty
+                                )}
+                                style={{ height: `${Math.round(h * 28)}px`, minWidth: '2px' }}
+                            />
+                        );
+                    })}
                 </div>
-                {/* Times */}
+
+                {/* Time + speed */}
                 <div className="flex items-center justify-between">
-                    <span className={cn('text-[10px] tabular-nums', textMuted)}>
+                    <span className={cn('text-[10px] tabular-nums leading-none', timeColor)}>
                         {formatTime(isPlaying || currentTime > 0 ? currentTime : duration)}
                     </span>
-                    <span className={cn('text-[10px] tabular-nums', textMuted)}>
-                        {formatTime(duration)}
-                    </span>
+                    <button
+                        onClick={cycleSpeed}
+                        className={cn(
+                            'text-[10px] font-semibold leading-none px-1.5 py-0.5 rounded transition-opacity',
+                            isFromMe ? 'text-white/65 hover:text-white' : 'text-muted-foreground hover:text-foreground'
+                        )}
+                    >
+                        {speed === 1 ? '1x' : `${speed}x`}
+                    </button>
                 </div>
             </div>
-
-            {/* Speed */}
-            <button
-                onClick={cycleSpeed}
-                className={cn(
-                    'shrink-0 text-[10px] font-bold w-7 text-center rounded px-1 py-0.5 transition-colors',
-                    btnBg,
-                    isFromMe ? 'text-white' : 'text-foreground'
-                )}
-            >
-                {speed}x
-            </button>
         </div>
     );
 };
