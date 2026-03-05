@@ -146,7 +146,7 @@ export async function handleAgentLogic(params: {
         systemPrompt += `Responda o lead de forma natural e empática. Mantenha a persona.\n`;
         systemPrompt += `Instruções de Saída:\n`;
         systemPrompt += `1. Se atingir os critérios de sucesso desta etapa, inclua [AVANÇAR_ETAPA] no final — mas NUNCA mencione ao lead que está avançando de etapa, mudando de fase ou qualquer coisa do tipo. A transição deve ser completamente invisível para o lead.\n`;
-        systemPrompt += `2. Ao coletar dados novos, inclua ao final: [DATA:{"campo": "valor"}] com os dados exatos informados pelo usuário.\n`;
+        systemPrompt += `2. SOMENTE quando o usuário informar um dado novo nesta mensagem, inclua ao final (nunca no início ou meio): [DATA:{"campo": "valor"}]. NUNCA inclua [DATA:...] em saudações, apresentações ou quando nenhum dado novo foi informado pelo usuário nesta mensagem.\n`;
 
         // --- DYNAMIC AI PROVIDER ---
         // Read provider config from company_settings (saved via AiProviderSettings UI)
@@ -185,11 +185,14 @@ export async function handleAgentLogic(params: {
             .slice(0, 30)
             .reverse();
 
+        const cleanHistoryText = (text: string) =>
+            (text || '').replace(/\[DATA:[\s\S]*?\]/g, '').replace('[AVANÇAR_ETAPA]', '').trim();
+
         const messages = [
             { role: "system", content: systemPrompt },
             ...filteredHistory.map((m: any) => ({
                 role: m.is_from_me ? "assistant" : "user",
-                content: m.message_text
+                content: cleanHistoryText(m.message_text)
             })),
             { role: "user", content: messageContent }
         ];
@@ -244,8 +247,8 @@ export async function handleAgentLogic(params: {
         }
 
         const cleanResponse = aiResponse
-            .replace('[AVANÇAR_ETAPA]', '')
-            .replace(/\[DATA:[\s\S]*?\]/, '')
+            .replace(/\[AVANÇAR_ETAPA\]/g, '')
+            .replace(/\[DATA:[\s\S]*?\]/g, '')
             .trim();
 
         // Send response via Evolution
@@ -278,11 +281,15 @@ export async function handleAgentLogic(params: {
                 if (openingExample?.message) {
                     // Small delay so the current AI response arrives first
                     await new Promise(resolve => setTimeout(resolve, 2000));
+                    const cleanOpening = openingExample.message
+                        .replace(/\[AVANÇAR_ETAPA\]/g, '')
+                        .replace(/\[DATA:[\s\S]*?\]/g, '')
+                        .trim();
                     await sendThroughEvolution({
                         supabase,
                         instanceName,
                         phone: realPhoneNumber,
-                        message: openingExample.message,
+                        message: cleanOpening,
                         leadId: lead.id
                     });
                     console.log(`📬 Sent opening message for stage: ${nextStage.name}`);
@@ -481,8 +488,8 @@ async function sendThroughEvolution(params: {
             body: JSON.stringify({ number: phone, options: { presence: 'composing' } })
         }).catch(() => {}); // ignore errors, presence is optional
 
-        // Delay proportional to message length (min 1s, max 5s)
-        const typingMs = Math.min(5000, Math.max(1000, message.length * 30));
+        // Delay proportional to message length (min 2s, max 8s)
+        const typingMs = Math.min(8000, Math.max(2000, message.length * 50));
         await new Promise(resolve => setTimeout(resolve, typingMs));
 
         // Stop typing presence
