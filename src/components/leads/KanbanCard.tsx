@@ -76,15 +76,6 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
             </div>
           )}
 
-          {/* Last message preview */}
-          {lead.last_message && (
-            <div className="relative mb-3 p-2.5 rounded-lg bg-muted/50 border border-border/50">
-              <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                {lead.last_message}
-              </p>
-            </div>
-          )}
-
           {/* Timestamp */}
           <div className="flex items-center gap-1.5 text-muted-foreground mb-3">
             <Clock className="h-3 w-3" />

@@ -36,7 +36,7 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
 
     const [isAdding, setIsAdding] = useState(false);
     const [newStageName, setNewStageName] = useState('');
-    const [newStageFunnelStatus, setNewStageFunnelStatus] = useState('');
+    const [newStagePipelineStageId, setNewStagePipelineStageId] = useState('');
     const [editingStageId, setEditingStageId] = useState<string | null>(null);
     const [stageFormData, setStageFormData] = useState<{
         name: string;
@@ -44,7 +44,8 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
         success_criteria: string;
         funnel_status: string;
         ia_context: string;
-    }>({ name: '', objective: '', success_criteria: '', funnel_status: 'new', ia_context: '' });
+        pipeline_stage_id: string;
+    }>({ name: '', objective: '', success_criteria: '', funnel_status: 'new', ia_context: '', pipeline_stage_id: '' });
 
     // Local state for adding variables/examples
     const [newVar, setNewVar] = useState({ name: '', description: '', required: false, field_type: 'text' });
@@ -55,9 +56,9 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
     useEffect(() => {
         setIsAdding(false);
         setNewStageName('');
-        setNewStageFunnelStatus('new');
+        setNewStagePipelineStageId('');
         setEditingStageId(null);
-        setStageFormData({ name: '', objective: '', success_criteria: '', funnel_status: 'new', ia_context: '' });
+        setStageFormData({ name: '', objective: '', success_criteria: '', funnel_status: 'new', ia_context: '', pipeline_stage_id: '' });
         setNewVar({ name: '', description: '', required: false, field_type: 'text' });
         setNewExample({ agent_response: '' });
         setNewOpeningMsg('');
@@ -67,15 +68,18 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
         if (!newStageName) return;
         try {
             const order = (agent.agent_stages?.length || 0) + 1;
+            const selectedPs = allPipelineStages.find(s => s.id === newStagePipelineStageId);
             await agentService.createStage({
                 agent_id: agent.id,
                 name: newStageName,
                 stage_order: order,
                 is_active: true,
-                funnel_status: newStageFunnelStatus
-            });
+                funnel_status: selectedPs?.maps_to_status || '',
+                pipeline_stage_id: newStagePipelineStageId || null,
+            } as any);
             toast.success('Etapa adicionada');
             setNewStageName('');
+            setNewStagePipelineStageId('');
             setIsAdding(false);
             onUpdate();
         } catch (error: any) {
@@ -91,13 +95,20 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
             objective: stage.objective || '',
             success_criteria: stage.success_criteria || '',
             funnel_status: (stage as any).funnel_status || 'new',
-            ia_context: (stage as any).ia_context || ''
+            ia_context: (stage as any).ia_context || '',
+            pipeline_stage_id: (stage as any).pipeline_stage_id || '',
         });
     };
 
     const handleSaveStage = async (id: string) => {
         try {
-            await agentService.updateStage(id, stageFormData);
+            const selectedPs = allPipelineStages.find(s => s.id === stageFormData.pipeline_stage_id);
+            const payload = {
+                ...stageFormData,
+                funnel_status: selectedPs?.maps_to_status || stageFormData.funnel_status,
+                pipeline_stage_id: stageFormData.pipeline_stage_id || null,
+            };
+            await agentService.updateStage(id, payload as any);
             toast.success('Etapa atualizada');
             setEditingStageId(null);
             onUpdate();
@@ -230,7 +241,7 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                     </div>
                                     <div className="space-y-2">
                                         <Label className="text-xs font-semibold">Etapa do Pipeline</Label>
-                                        <Select value={newStageFunnelStatus} onValueChange={setNewStageFunnelStatus}>
+                                        <Select value={newStagePipelineStageId} onValueChange={setNewStagePipelineStageId}>
                                             <SelectTrigger>
                                                 <SelectValue placeholder="Selecione..." />
                                             </SelectTrigger>
@@ -239,7 +250,7 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                                     <React.Fragment key={p.id}>
                                                         <div className="px-2 py-1 text-xs font-semibold text-muted-foreground border-b">{p.name}</div>
                                                         {(p.stages || []).map(s => (
-                                                            <SelectItem key={s.id} value={s.maps_to_status}>
+                                                            <SelectItem key={s.id} value={s.id}>
                                                                 <div className="flex items-center gap-2">
                                                                     <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
                                                                     {s.name}
@@ -341,8 +352,8 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                                 <div className="grid gap-2">
                                                     <Label className="text-sm font-semibold">Etapa do Pipeline</Label>
                                                     <Select
-                                                        value={stageFormData.funnel_status}
-                                                        onValueChange={(value) => setStageFormData({ ...stageFormData, funnel_status: value })}
+                                                        value={stageFormData.pipeline_stage_id}
+                                                        onValueChange={(value) => setStageFormData({ ...stageFormData, pipeline_stage_id: value })}
                                                     >
                                                         <SelectTrigger>
                                                             <SelectValue placeholder="Selecione..." />
@@ -352,7 +363,7 @@ export const AgentStagesTab = ({ agent, onUpdate }: AgentStagesTabProps) => {
                                                                 <React.Fragment key={p.id}>
                                                                     <div className="px-2 py-1 text-xs font-semibold text-muted-foreground border-b">{p.name}</div>
                                                                     {(p.stages || []).map(s => (
-                                                                        <SelectItem key={s.id} value={s.maps_to_status}>
+                                                                        <SelectItem key={s.id} value={s.id}>
                                                                             <div className="flex items-center gap-2">
                                                                                 <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
                                                                                 {s.name}

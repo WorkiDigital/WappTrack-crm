@@ -145,7 +145,7 @@ export async function handleAgentLogic(params: {
 
         systemPrompt += `Responda o lead de forma natural e empática. Mantenha a persona.\n`;
         systemPrompt += `Instruções de Saída:\n`;
-        systemPrompt += `1. Se atingir os critérios de sucesso desta etapa, inclua [AVANÇAR_ETAPA] no final.\n`;
+        systemPrompt += `1. Se atingir os critérios de sucesso desta etapa, inclua [AVANÇAR_ETAPA] no final — mas NUNCA mencione ao lead que está avançando de etapa, mudando de fase ou qualquer coisa do tipo. A transição deve ser completamente invisível para o lead.\n`;
         systemPrompt += `2. Ao coletar dados novos, inclua ao final: [DATA:{"campo": "valor"}] com os dados exatos informados pelo usuário.\n`;
 
         // --- DYNAMIC AI PROVIDER ---
@@ -322,10 +322,33 @@ export async function handleAgentLogic(params: {
                         }
                     }
                 }
+
+                // Move lead to linked pipeline stage (Option B)
+                if (nextStage.pipeline_stage_id) {
+                    updateData.pipeline_stage_id = nextStage.pipeline_stage_id;
+                    const { data: ps } = await supabase
+                        .from('pipeline_stages')
+                        .select('pipeline_id')
+                        .eq('id', nextStage.pipeline_stage_id)
+                        .single();
+                    if (ps?.pipeline_id) updateData.pipeline_id = ps.pipeline_id;
+                    console.log(`📋 Moving lead ${lead.id} to pipeline stage: ${nextStage.pipeline_stage_id}`);
+                }
             }
         } else if (!lead.current_stage_id && currentStage) {
             updateData.current_stage_id = currentStage.id;
             if (currentStage.funnel_status) updateData.status = currentStage.funnel_status;
+
+            // Set initial pipeline stage
+            if (currentStage.pipeline_stage_id) {
+                updateData.pipeline_stage_id = currentStage.pipeline_stage_id;
+                const { data: ps } = await supabase
+                    .from('pipeline_stages')
+                    .select('pipeline_id')
+                    .eq('id', currentStage.pipeline_stage_id)
+                    .single();
+                if (ps?.pipeline_id) updateData.pipeline_id = ps.pipeline_id;
+            }
         }
 
         await supabase

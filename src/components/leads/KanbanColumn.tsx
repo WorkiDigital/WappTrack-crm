@@ -6,7 +6,7 @@ import { PipelineStage } from '@/types/pipeline';
 import { pipelineService } from '@/services/pipelineService';
 import { cn } from '@/lib/utils';
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -147,14 +147,13 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                 )}
             </div>
 
-            {/* Edit stage popover (triggered from dropdown) */}
-            <Popover open={editOpen} onOpenChange={setEditOpen}>
-                <PopoverTrigger asChild>
-                    <span className="hidden" />
-                </PopoverTrigger>
-                <PopoverContent className="w-72 p-4" align="end" side="bottom">
-                    <div className="space-y-3">
-                        <p className="text-sm font-semibold">Editar Etapa</p>
+            {/* Edit stage dialog */}
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                        <DialogTitle>Editar Etapa</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 pt-1">
                         <Input
                             value={editName}
                             onChange={e => setEditName(e.target.value)}
@@ -185,15 +184,15 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                 <Label htmlFor="sw-lost" className="text-xs">Etapa de perda</Label>
                             </div>
                         </div>
-                        <div className="flex justify-between gap-2">
+                        <div className="flex justify-between gap-2 pt-1">
                             <Button variant="ghost" size="sm" onClick={() => setEditOpen(false)}>Cancelar</Button>
                             <Button size="sm" onClick={handleSave} disabled={isSaving} style={{ backgroundColor: editColor }}>
                                 Salvar
                             </Button>
                         </div>
                     </div>
-                </PopoverContent>
-            </Popover>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
