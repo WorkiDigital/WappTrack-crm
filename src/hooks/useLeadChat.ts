@@ -172,21 +172,24 @@ export const useLeadChat = (leadId: string, leadPhone: string) => {
       setMessages((prev) => [...prev, optimisticMessage]);
       setSending(true);
 
-      try {
-        const { data, error } = await supabase.functions.invoke('evolution-send-message', {
-          body: {
-            instanceName,
-            phone: normalizedPhone,
-            message: messageText,
-            leadId,
-          },
-        });
+      // Liberar o input imediatamente — o envio continua em background
+      setTimeout(() => setSending(false), 0);
 
+      supabase.functions.invoke('evolution-send-message', {
+        body: {
+          instanceName,
+          phone: normalizedPhone,
+          message: messageText,
+          leadId,
+        },
+      }).then(({ data, error }) => {
         if (error || !data?.success) {
-          throw new Error(data?.error || 'Erro ao enviar mensagem');
+          setMessages((prev) =>
+            prev.map((msg) => (msg.id === optimisticId ? { ...msg, status: 'failed' } : msg))
+          );
+          toast.error('Erro ao enviar mensagem');
+          return;
         }
-
-        // Atualizar mensagem otimista com dados reais
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === optimisticId
@@ -195,16 +198,13 @@ export const useLeadChat = (leadId: string, leadPhone: string) => {
           )
         );
         optimisticIdsRef.current.delete(optimisticId);
-      } catch (error) {
-        console.error('❌ Erro ao enviar mensagem:', error);
-        // Marcar como falha
+      }).catch((err) => {
+        console.error('❌ Erro ao enviar mensagem:', err);
         setMessages((prev) =>
           prev.map((msg) => (msg.id === optimisticId ? { ...msg, status: 'failed' } : msg))
         );
         toast.error('Erro ao enviar mensagem');
-      } finally {
-        setSending(false);
-      }
+      });
     },
     [leadId, leadPhone]
   );

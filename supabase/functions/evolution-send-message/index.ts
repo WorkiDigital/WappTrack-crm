@@ -75,13 +75,17 @@ serve(async (req) => {
     // Use service role for database operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify user owns the lead before sending message
-    const { data: lead, error: leadError } = await supabase
-      .from('leads')
-      .select('id, user_id')
-      .eq('id', leadId)
-      .single();
+    // Buscar lead e instância em paralelo para reduzir latência
+    const [leadResult, instanceResult] = await Promise.all([
+      supabase.from('leads').select('id, user_id').eq('id', leadId).single(),
+      supabase.from('whatsapp_instances').select('*')
+        .eq('instance_name', instanceName)
+        .eq('user_id', userId)
+        .eq('status', 'connected')
+        .single(),
+    ]);
 
+    const { data: lead, error: leadError } = leadResult;
     if (leadError || !lead) {
       console.error('Lead not found:', leadError);
       return new Response(
@@ -89,7 +93,6 @@ serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
     if (lead.user_id !== userId) {
       console.error('Unauthorized: User does not own this lead');
       return new Response(
@@ -98,15 +101,7 @@ serve(async (req) => {
       );
     }
 
-    // Buscar instância ativa pertencente ao usuário autenticado
-    const { data: instance, error: instanceError } = await supabase
-      .from('whatsapp_instances')
-      .select('*')
-      .eq('instance_name', instanceName)
-      .eq('user_id', userId)
-      .eq('status', 'connected')
-      .single();
-
+    const { data: instance, error: instanceError } = instanceResult;
     if (instanceError || !instance) {
       console.error('❌ Instância não encontrada ou desconectada:', instanceError);
       throw new Error('Instância WhatsApp não disponível');
