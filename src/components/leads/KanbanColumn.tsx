@@ -5,8 +5,9 @@ import { KanbanCard } from './KanbanCard';
 import { PipelineStage } from '@/types/pipeline';
 import { pipelineService } from '@/services/pipelineService';
 import { cn } from '@/lib/utils';
-import { Pencil, Trash2, Trophy, X, Check } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -69,110 +70,130 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
         }
     };
 
-    const headerIcon = stage.is_won ? '✅' : stage.is_lost ? '❌' : null;
+    const wonLostLabel = stage.is_won ? ' · Ganho' : stage.is_lost ? ' · Perdido' : '';
 
     return (
-        <div className="kanban-column bg-card shrink-0 w-72">
-            {/* Column header */}
-            <div
-                className="kanban-column-header text-white flex items-center justify-between"
-                style={{ background: `linear-gradient(135deg, ${stage.color}ee, ${stage.color}bb)` }}
-            >
-                <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-2 h-2 rounded-full bg-white/40 animate-pulse shrink-0" />
-                    <h3 className="font-semibold truncate">
-                        {headerIcon && <span className="mr-1">{headerIcon}</span>}
-                        {stage.name}
-                    </h3>
-                </div>
-                <div className="flex items-center gap-1 shrink-0 ml-2">
-                    <span className="bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full text-xs font-bold">
-                        {leads.length}
-                    </span>
-                    {/* Edit stage popover */}
-                    <Popover open={editOpen} onOpenChange={open => {
-                        setEditOpen(open);
-                        if (open) { setEditName(stage.name); setEditColor(stage.color); setEditIsWon(stage.is_won); setEditIsLost(stage.is_lost); }
-                    }}>
-                        <PopoverTrigger asChild>
-                            <button className="p-1 rounded hover:bg-white/20 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100">
-                                <Pencil className="h-3 w-3" />
+        <div className="shrink-0 w-80 flex flex-col rounded-xl bg-card border border-border/60 shadow-sm overflow-hidden">
+            {/* ── Column header ─────────────────────────────────── */}
+            <div className="px-4 pt-4 pb-3">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: stage.color }}
+                        />
+                        <h3 className="font-semibold text-sm truncate">{stage.name}</h3>
+                        <span className="text-xs bg-muted px-2 py-0.5 rounded-full font-medium text-muted-foreground flex-shrink-0">
+                            {leads.length}
+                        </span>
+                    </div>
+
+                    {/* "..." menu */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                                <MoreHorizontal className="h-4 w-4" />
                             </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-72 p-4" align="end">
-                            <div className="space-y-3">
-                                <p className="text-sm font-semibold">Editar Etapa</p>
-                                <Input
-                                    value={editName}
-                                    onChange={e => setEditName(e.target.value)}
-                                    placeholder="Nome da etapa"
-                                    onKeyDown={e => e.key === 'Enter' && handleSave()}
-                                    autoFocus
-                                />
-                                <div className="space-y-1.5">
-                                    <Label className="text-xs text-muted-foreground">Cor</Label>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {PALETTE.map(c => (
-                                            <button
-                                                key={c}
-                                                onClick={() => setEditColor(c)}
-                                                className={cn('w-6 h-6 rounded-full transition-transform', editColor === c && 'ring-2 ring-offset-2 ring-foreground scale-110')}
-                                                style={{ backgroundColor: c }}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <Switch checked={editIsWon} onCheckedChange={v => { setEditIsWon(v); if (v) setEditIsLost(false); }} id="sw-won" />
-                                        <Label htmlFor="sw-won" className="text-xs">Etapa de ganho</Label>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Switch checked={editIsLost} onCheckedChange={v => { setEditIsLost(v); if (v) setEditIsWon(false); }} id="sw-lost" />
-                                        <Label htmlFor="sw-lost" className="text-xs">Etapa de perda</Label>
-                                    </div>
-                                </div>
-                                <div className="flex justify-between gap-2">
-                                    <Button variant="destructive" size="sm" onClick={handleDelete}>
-                                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Remover
-                                    </Button>
-                                    <div className="flex gap-1">
-                                        <Button variant="ghost" size="sm" onClick={() => setEditOpen(false)}>Cancelar</Button>
-                                        <Button size="sm" onClick={handleSave} disabled={isSaving}
-                                            style={{ backgroundColor: editColor }}>
-                                            Salvar
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        </PopoverContent>
-                    </Popover>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem onClick={() => {
+                                setEditName(stage.name);
+                                setEditColor(stage.color);
+                                setEditIsWon(stage.is_won);
+                                setEditIsLost(stage.is_lost);
+                                setEditOpen(true);
+                            }}>
+                                <Pencil className="h-3.5 w-3.5 mr-2" />
+                                Editar etapa
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={handleDelete}>
+                                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                Remover etapa
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
+
+                {/* Subtitle: lead count + won/lost label */}
+                <p className="text-xs text-muted-foreground mt-1.5 pl-5.5">
+                    {leads.length} lead{leads.length !== 1 ? 's' : ''}{wonLostLabel}
+                </p>
             </div>
 
-            {/* Droppable body */}
+            <div className="border-t border-border/50" />
+
+            {/* ── Droppable body ────────────────────────────────── */}
             <div
                 ref={setNodeRef}
                 className={cn(
-                    'kanban-column-body group',
-                    isOver && isDragging && 'bg-primary/10 ring-2 ring-primary/30 ring-inset'
+                    'flex-1 p-3 space-y-3 min-h-[520px] transition-colors duration-200',
+                    isOver && isDragging && 'bg-primary/5 ring-2 ring-primary/20 ring-inset'
                 )}
             >
                 {leads.map(lead => (
                     <KanbanCard key={lead.id} lead={lead} onLeadClick={onLeadClick} onOpenChat={onOpenChat} />
                 ))}
                 {leads.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                            <svg className="w-6 h-6 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="flex flex-col items-center justify-center py-14 text-muted-foreground/60">
+                        <div className="w-10 h-10 rounded-full bg-muted/60 flex items-center justify-center mb-3">
+                            <svg className="w-5 h-5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                             </svg>
                         </div>
-                        <span className="text-sm font-medium">Nenhum lead</span>
-                        <span className="text-xs mt-1">Arraste leads para cá</span>
+                        <span className="text-xs font-medium">Nenhum lead</span>
+                        <span className="text-xs mt-0.5">Arraste leads para cá</span>
                     </div>
                 )}
             </div>
+
+            {/* Edit stage popover (triggered from dropdown) */}
+            <Popover open={editOpen} onOpenChange={setEditOpen}>
+                <PopoverTrigger asChild>
+                    <span className="hidden" />
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-4" align="end" side="bottom">
+                    <div className="space-y-3">
+                        <p className="text-sm font-semibold">Editar Etapa</p>
+                        <Input
+                            value={editName}
+                            onChange={e => setEditName(e.target.value)}
+                            placeholder="Nome da etapa"
+                            onKeyDown={e => e.key === 'Enter' && handleSave()}
+                            autoFocus
+                        />
+                        <div className="space-y-1.5">
+                            <Label className="text-xs text-muted-foreground">Cor</Label>
+                            <div className="flex flex-wrap gap-1.5">
+                                {PALETTE.map(c => (
+                                    <button
+                                        key={c}
+                                        onClick={() => setEditColor(c)}
+                                        className={cn('w-6 h-6 rounded-full transition-transform', editColor === c && 'ring-2 ring-offset-2 ring-foreground scale-110')}
+                                        style={{ backgroundColor: c }}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Switch checked={editIsWon} onCheckedChange={v => { setEditIsWon(v); if (v) setEditIsLost(false); }} id="sw-won" />
+                                <Label htmlFor="sw-won" className="text-xs">Etapa de ganho</Label>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Switch checked={editIsLost} onCheckedChange={v => { setEditIsLost(v); if (v) setEditIsWon(false); }} id="sw-lost" />
+                                <Label htmlFor="sw-lost" className="text-xs">Etapa de perda</Label>
+                            </div>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => setEditOpen(false)}>Cancelar</Button>
+                            <Button size="sm" onClick={handleSave} disabled={isSaving} style={{ backgroundColor: editColor }}>
+                                Salvar
+                            </Button>
+                        </div>
+                    </div>
+                </PopoverContent>
+            </Popover>
         </div>
     );
 };

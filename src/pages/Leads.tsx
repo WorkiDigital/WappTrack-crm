@@ -206,6 +206,7 @@ const Leads = () => {
                   onLeadClick={handleOpenViewDialog}
                   onOpenChat={handleOpenChat}
                   onLeadUpdate={fetchData}
+                  onAddLead={handleOpenAddDialog}
                 />
               )}
             </TabsContent>

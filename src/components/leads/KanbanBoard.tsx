@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Plus, ChevronDown, Loader2, GitBranch, Trash2 } from 'lucide-react';
+import { Plus, Loader2, GitBranch, Trash2, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const PALETTE = [
@@ -26,10 +26,11 @@ interface KanbanBoardProps {
     onLeadClick: (lead: Lead) => void;
     onOpenChat: (lead: Lead) => void;
     onLeadUpdate: () => void;
+    onAddLead?: () => void;
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
-    leads, onLeadClick, onOpenChat, onLeadUpdate
+    leads, onLeadClick, onOpenChat, onLeadUpdate, onAddLead
 }) => {
     const { pipelines, activePipeline, setActivePipeline, isLoading, reload, addStage, deletePipeline } = usePipelines();
     const [activeId, setActiveId] = React.useState<string | null>(null);
@@ -53,7 +54,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const getLeadsByStage = (stage: PipelineStage) => {
         return leads.filter(lead => {
             if ((lead as any).pipeline_stage_id) return (lead as any).pipeline_stage_id === stage.id;
-            // Fallback for leads without pipeline_stage_id yet
             return lead.status === stage.maps_to_status;
         });
     };
@@ -79,8 +79,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
         try {
             await pipelineService.moveLeadToStage(leadId, stage);
-            const stageName = stage.is_won ? `✅ ${stage.name}` : stage.is_lost ? `❌ ${stage.name}` : stage.name;
-            toast.success(`Lead movido para "${stageName}"`);
+            toast.success(`Lead movido para "${stage.name}"`);
             onLeadUpdate();
         } catch {
             toast.error('Erro ao mover lead');
@@ -91,8 +90,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         if (!newPipelineName.trim()) return;
         setIsCreating(true);
         try {
-            const { data: { user } } = await (await import('@/integrations/supabase/client')).supabase.auth.getUser();
-            const created = await pipelineService.createPipeline({ name: newPipelineName, color: newPipelineColor });
+            await pipelineService.createPipeline({ name: newPipelineName, color: newPipelineColor });
             toast.success(`Pipeline "${newPipelineName}" criado`);
             setShowCreatePipeline(false);
             setNewPipelineName('');
@@ -120,7 +118,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     const handleDeletePipeline = async () => {
         if (!activePipeline) return;
-        if (!confirm(`Tem certeza que deseja excluir o pipeline "${activePipeline.name}"? Todos os leads perderão a associação.`)) return;
+        if (!confirm(`Tem certeza que deseja excluir o pipeline "${activePipeline.name}"?`)) return;
         await deletePipeline(activePipeline.id);
     };
 
@@ -158,51 +156,114 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
 
     return (
-        <div className="space-y-4">
-            {/* Pipeline selector bar */}
-            <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-1 flex-wrap flex-1">
-                    {pipelines.map(pipeline => (
-                        <button
-                            key={pipeline.id}
-                            onClick={() => setActivePipeline(pipeline)}
-                            className={cn(
-                                'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all border',
-                                activePipeline?.id === pipeline.id
-                                    ? 'text-white shadow-sm border-transparent'
-                                    : 'bg-muted/50 text-muted-foreground hover:text-foreground border-border'
+        <div className="flex flex-col h-full">
+            {/* ── Header ───────────────────────────────────────────── */}
+            <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
+                <div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <h2 className="text-xl font-bold tracking-tight">Pipeline de Vendas</h2>
+                        {/* Pipeline dropdown */}
+                        <div className="flex items-center gap-1">
+                            <Select
+                                value={activePipeline?.id || ''}
+                                onValueChange={(id) => {
+                                    const p = pipelines.find(p => p.id === id);
+                                    if (p) setActivePipeline(p);
+                                }}
+                            >
+                                <SelectTrigger
+                                    className="h-8 text-sm font-medium border-2 min-w-[130px]"
+                                    style={{ borderColor: activePipeline?.color || '#6366f1' }}
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {pipelines.map(p => (
+                                        <SelectItem key={p.id} value={p.id}>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+                                                {p.name}
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                    <div className="border-t mt-1 pt-1">
+                                        <button
+                                            className="w-full text-left text-xs px-2 py-1.5 text-primary hover:bg-muted rounded flex items-center gap-2"
+                                            onClick={(e) => { e.stopPropagation(); setShowCreatePipeline(true); }}
+                                        >
+                                            <Plus className="h-3 w-3" /> Novo Pipeline
+                                        </button>
+                                    </div>
+                                </SelectContent>
+                            </Select>
+                            {activePipeline && (
+                                <button
+                                    onClick={handleDeletePipeline}
+                                    className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                                    title="Excluir pipeline"
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                </button>
                             )}
-                            style={activePipeline?.id === pipeline.id ? { backgroundColor: pipeline.color, borderColor: pipeline.color } : {}}
-                        >
-                            <div
-                                className="w-2 h-2 rounded-full"
-                                style={{ backgroundColor: activePipeline?.id === pipeline.id ? 'rgba(255,255,255,0.6)' : pipeline.color }}
-                            />
-                            {pipeline.name}
-                            <span className={cn(
-                                'text-xs px-1.5 py-0.5 rounded-full',
-                                activePipeline?.id === pipeline.id ? 'bg-white/20' : 'bg-muted'
-                            )}>
-                                {(pipeline.stages || []).reduce((acc, s) => acc + getLeadsByStage(s).length, 0)}
-                            </span>
-                        </button>
-                    ))}
+                        </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">Arraste os negócios entre os estágios</p>
                 </div>
-                <div className="flex items-center gap-1">
-                    {activePipeline && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={handleDeletePipeline}>
-                            <Trash2 className="h-3.5 w-3.5" />
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2">
+                    <Popover open={showAddStage} onOpenChange={setShowAddStage}>
+                        <PopoverTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-9">
+                                <Plus className="h-4 w-4 mr-1.5" /> Novo Estágio
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72 p-4" align="end">
+                            <div className="space-y-3">
+                                <p className="text-sm font-semibold">Nova Etapa</p>
+                                <Input
+                                    placeholder="Nome da etapa"
+                                    value={newStageName}
+                                    onChange={e => setNewStageName(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleAddStage()}
+                                    autoFocus
+                                />
+                                <div className="space-y-1.5">
+                                    <Label className="text-xs text-muted-foreground">Cor</Label>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {PALETTE.map(c => (
+                                            <button
+                                                key={c}
+                                                onClick={() => setNewStageColor(c)}
+                                                className={cn('w-6 h-6 rounded-full transition-transform', newStageColor === c && 'ring-2 ring-offset-2 ring-foreground scale-110')}
+                                                style={{ backgroundColor: c }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                                <Button size="sm" className="w-full" onClick={handleAddStage} disabled={isAddingStage || !newStageName.trim()}>
+                                    {isAddingStage ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+                                    Adicionar
+                                </Button>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+
+                    {onAddLead && (
+                        <Button
+                            size="sm"
+                            className="h-9 bg-emerald-500 hover:bg-emerald-600 text-white"
+                            onClick={onAddLead}
+                        >
+                            <Plus className="h-4 w-4 mr-1.5" /> Novo Lead
                         </Button>
                     )}
-                    <Button variant="outline" size="sm" className="h-8" onClick={() => setShowCreatePipeline(true)}>
-                        <Plus className="h-3.5 w-3.5 mr-1" /> Novo Pipeline
-                    </Button>
                 </div>
             </div>
 
-            {/* Kanban columns */}
+            {/* ── Kanban columns ───────────────────────────────────── */}
             <DndContext collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-                <div className="flex gap-4 overflow-x-auto pb-4">
+                <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
                     {stages.map(stage => (
                         <KanbanColumn
                             key={stage.id}
@@ -214,46 +275,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                             onStageUpdate={reload}
                         />
                     ))}
-
-                    {/* Add stage button */}
-                    <div className="kanban-column-add shrink-0 w-72">
-                        <Popover open={showAddStage} onOpenChange={setShowAddStage}>
-                            <PopoverTrigger asChild>
-                                <button className="w-full h-14 flex items-center justify-center gap-2 border-2 border-dashed border-muted-foreground/20 rounded-xl text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-all text-sm font-medium">
-                                    <Plus className="h-4 w-4" /> Nova Etapa
-                                </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-72 p-4" align="start">
-                                <div className="space-y-3">
-                                    <p className="text-sm font-semibold">Nova Etapa</p>
-                                    <Input
-                                        placeholder="Nome da etapa"
-                                        value={newStageName}
-                                        onChange={e => setNewStageName(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && handleAddStage()}
-                                        autoFocus
-                                    />
-                                    <div className="space-y-1.5">
-                                        <Label className="text-xs text-muted-foreground">Cor</Label>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {PALETTE.map(c => (
-                                                <button
-                                                    key={c}
-                                                    onClick={() => setNewStageColor(c)}
-                                                    className={cn('w-6 h-6 rounded-full transition-transform', newStageColor === c && 'ring-2 ring-offset-2 ring-foreground scale-110')}
-                                                    style={{ backgroundColor: c }}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <Button size="sm" className="w-full" onClick={handleAddStage} disabled={isAddingStage || !newStageName.trim()}>
-                                        {isAddingStage ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
-                                        Adicionar
-                                    </Button>
-                                </div>
-                            </PopoverContent>
-                        </Popover>
-                    </div>
                 </div>
 
                 <DragOverlay>
@@ -279,7 +300,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     );
 };
 
-// ── Create Pipeline Dialog ────────────────────────────────────────────────────
+// ── Create Pipeline Dialog ──────────────────────────────────────────────────
 function CreatePipelineDialog({ open, onOpenChange, name, onNameChange, color, onColorChange, onConfirm, isLoading }: {
     open: boolean;
     onOpenChange: (v: boolean) => void;
