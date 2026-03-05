@@ -342,11 +342,9 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
                     </div>
                   )}
 
-                  {message.media_type !== 'audio' && message.message_text && (
-                    <p className="text-sm shadow-text whitespace-pre-wrap break-words">
-                      {message.message_text}
-                    </p>
-                  )}
+                  <p className="text-sm shadow-text whitespace-pre-wrap break-words">
+                    {message.message_text}
+                  </p>
                   <div
                     className={cn(
                       'flex items-center gap-2 mt-1',
