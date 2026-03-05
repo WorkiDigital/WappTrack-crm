@@ -192,7 +192,7 @@ const Leads = () => {
               </TabsList>
             </div>
 
-            <TabsContent value="kanban" className="mt-0 flex-1 overflow-auto">
+            <TabsContent value="kanban" className="mt-0 flex-1 overflow-auto -mx-4 lg:-mx-8">
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center h-96 gap-4">
                   <div className="relative">

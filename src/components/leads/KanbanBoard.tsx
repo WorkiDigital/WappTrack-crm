@@ -156,7 +156,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full px-4 lg:px-8">
             {/* ── Header ───────────────────────────────────────────── */}
             <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
                 <div>
