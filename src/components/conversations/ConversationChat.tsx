@@ -343,7 +343,7 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
                   )}
 
                   <p className="text-sm shadow-text whitespace-pre-wrap break-words">
-                    {message.message_text}
+                    {message.message_text?.replace(/^\[|\]$/g, '')}
                   </p>
                   <div
                     className={cn(
