@@ -83,7 +83,7 @@ export const useWhatsAppInstances = () => {
       // First create instance in Evolution API
       const evolutionResult = await evolutionService.createEvolutionInstance(
         instanceName.trim(),
-        `https://qdilrnnfmjkunxmukoek.supabase.co/functions/v1/evolution-webhook`
+        `https://kdnmzyaozdssdwegdwlb.supabase.co/functions/v1/evolution-webhook`
       );
 
       if (!evolutionResult.success) {
@@ -123,7 +123,7 @@ export const useWhatsAppInstances = () => {
           user_id: session.user.id,
           base_url: 'https://painelevo.workidigital.tech',
           status: 'disconnected',
-          webhook_url: `https://qdilrnnfmjkunxmukoek.supabase.co/functions/v1/evolution-webhook`
+          webhook_url: `https://kdnmzyaozdssdwegdwlb.supabase.co/functions/v1/evolution-webhook`
         })
         .select()
         .single();

@@ -96,7 +96,7 @@ serve(async (req) => {
     console.log('Base URL:', baseUrl);
 
     // Correct payload format based on Evolution API documentation
-    const webhookUrl = webhook || `https://qdilrnnfmjkunxmukoek.supabase.co/functions/v1/evolution-webhook`;
+    const webhookUrl = webhook || `${supabaseUrl}/functions/v1/evolution-webhook`;
 
     const requestBody = {
       instanceName: trimmedName,

@@ -95,7 +95,7 @@ serve(async (req) => {
     // 🌍 Geolocalização automática por IP
     let geoData = { city: null, region: null, country: null, isp: null };
     try {
-      const geoResponse = await fetch(`http://ip-api.com/json/${ipAddress}?fields=status,country,regionName,city,isp,query`);
+      const geoResponse = await fetch(`https://ip-api.com/json/${ipAddress}?fields=status,country,regionName,city,isp,query`);
       if (geoResponse.ok) {
         const geoJson = await geoResponse.json();
         if (geoJson.status === 'success') {
