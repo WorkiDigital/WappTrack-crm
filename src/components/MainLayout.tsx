@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import type { CompanySettings, Theme } from '@/types';
 import { useSharedAccess } from '@/context/SharedAccessContext';
+import { useUnreadCount } from '@/hooks/useUnreadCount';
 import {
   Sidebar,
   SidebarContent,
@@ -42,6 +43,7 @@ const AppSidebar = () => {
   const { isSharedMode, permissions: sharedPermissions, token } = useSharedAccess();
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const totalUnread = useUnreadCount();
 
   const navigation = [
     {
@@ -210,7 +212,12 @@ const AppSidebar = () => {
                           "h-4 w-4 transition-colors",
                           location.pathname === item.href && "text-primary"
                         )} />
-                        <span>{item.name}</span>
+                        <span className="flex-1">{item.name}</span>
+                        {item.module === 'conversations' && totalUnread > 0 && (
+                          <span className="ml-auto min-w-[1.25rem] h-5 px-1 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
+                            {totalUnread > 99 ? '99+' : totalUnread}
+                          </span>
+                        )}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
