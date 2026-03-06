@@ -542,7 +542,7 @@ async function sendThroughEvolution(params: {
     if (!instance) return;
 
     const evolutionApiKey = Deno.env.get('EVOLUTION_API_KEY');
-    const evolutionBaseUrl = Deno.env.get('EVOLUTION_API_URL') || instance.base_url || "https://evoapi.workidigital.tech";
+    const evolutionBaseUrl = Deno.env.get('EVOLUTION_API_URL') || instance.base_url || "https://painelevo.workidigital.tech";
 
     const headers = {
         'Content-Type': 'application/json',

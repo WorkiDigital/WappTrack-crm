@@ -54,7 +54,7 @@ serve(async (req) => {
       );
     }
 
-    const eventName = (body.event || '').toLowerCase().replace('_', '.');
+    const eventName = (body.event || '').toLowerCase().replace(/_/g, '.');
     console.log('Evolution webhook received event:', eventName, 'instance:', body.instance);
 
     // Helper: normalize data to always be a single message object
