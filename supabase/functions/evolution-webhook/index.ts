@@ -54,10 +54,23 @@ serve(async (req) => {
       );
     }
 
-    console.log('Evolution webhook received:', JSON.stringify(body, null, 2));
+    const eventName = (body.event || '').toLowerCase().replace('_', '.');
+    console.log('Evolution webhook received event:', eventName, 'instance:', body.instance);
 
-    if (body.event === 'messages.upsert' && body.data) {
-      const message = body.data;
+    // Helper: normalize data to always be a single message object
+    const normalizeData = (data: any): any => {
+      if (Array.isArray(data)) return data[0]; // Evolution API v2 may send array
+      return data;
+    };
+
+    if ((eventName === 'messages.upsert') && body.data) {
+      const message = normalizeData(body.data);
+      if (!message) {
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200
+        });
+      }
+
       const remoteJid = message.key?.remoteJid;
       let instanceName: string;
       const isFromMe = message.key?.fromMe;
@@ -184,23 +197,27 @@ serve(async (req) => {
           }
         }
       }
-    } else if (body.event === 'messages.update' && body.data) {
+    } else if ((eventName === 'messages.update') && body.data) {
       // ✅ Tratar atualização de status da mensagem (checks)
-      const update = body.data;
-      if (update && update.key?.id) {
-        const whatsappId = update.key.id;
-        const status = update.status; // 3=enviado, 4=entregue, 5=lido
+      const rawUpdate = body.data;
+      const updates = Array.isArray(rawUpdate) ? rawUpdate : [rawUpdate];
 
-        let statusLabel = 'sent';
-        if (status === 4 || status === 'DELIVERY_ACK') statusLabel = 'delivered';
-        if (status === 5 || status === 'READ') statusLabel = 'read';
+      for (const update of updates) {
+        if (update && update.key?.id) {
+          const whatsappId = update.key.id;
+          const status = update.status; // 3=enviado, 4=entregue, 5=lido
 
-        console.log(`🔄 Atualizando status da mensagem ${whatsappId} para: ${statusLabel} (${status})`);
+          let statusLabel = 'sent';
+          if (status === 4 || status === 'DELIVERY_ACK') statusLabel = 'delivered';
+          if (status === 5 || status === 'READ') statusLabel = 'read';
 
-        await supabase
-          .from('lead_messages')
-          .update({ status: statusLabel })
-          .eq('whatsapp_message_id', whatsappId);
+          console.log(`🔄 Atualizando status da mensagem ${whatsappId} para: ${statusLabel} (${status})`);
+
+          await supabase
+            .from('lead_messages')
+            .update({ status: statusLabel })
+            .eq('whatsapp_message_id', whatsappId);
+        }
       }
     }
 
