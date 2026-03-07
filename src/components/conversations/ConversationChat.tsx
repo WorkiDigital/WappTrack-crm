@@ -8,7 +8,7 @@ import { useLeadChat } from '@/hooks/useLeadChat';
 import { formatBrazilianPhone } from '@/lib/phoneUtils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, Loader2, Image as ImageIcon, Video, Volume2, X, Phone, ChevronDown, FileText, Download, Check, CheckCheck, Bot, Sparkles, Info, Settings } from 'lucide-react';
+import { Send, MessageCircle, Loader2, Image as ImageIcon, Video, Volume2, X, Phone, ChevronDown, FileText, Download, Check, CheckCheck, Bot, Sparkles, Info, Settings, Trash2, Power } from 'lucide-react';
 import LeadDetailDialog from '@/components/leads/LeadDetailDialog';
 import { AudioPlayer } from './AudioPlayer';
 import { agentService } from '@/services/agentService';
@@ -24,6 +24,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -128,6 +129,22 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
     }
   };
 
+  const handleRemoveAgent = async () => {
+    if (!lead) return;
+    if (!window.confirm('Remover o agente de IA deste lead? Isso também reinicia o estágio e as variáveis coletadas.')) return;
+    setIsUpdatingAI(true);
+    try {
+      const updatedLead = await updateLead(lead.id, { agent_id: null, current_stage_id: null, collected_variables: {} });
+      toast.success('Agente removido do lead');
+      onLeadUpdate?.(updatedLead);
+    } catch (error) {
+      console.error('Erro ao remover agente:', error);
+      toast.error('Erro ao remover agente');
+    } finally {
+      setIsUpdatingAI(false);
+    }
+  };
+
   const handleSaveLead = async (data: Partial<Lead>) => {
     if (!lead) return;
     try {
@@ -222,15 +239,29 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
             </p>
           </div>
           {lead.agent_id && (
-            <Badge
-              variant="secondary"
-              className="ml-2 gap-1 bg-primary/10 text-primary border-primary/20 animate-pulse cursor-pointer hover:bg-primary/20"
-              onClick={handleToggleAI}
-              title="Clique para desativar a IA"
-            >
-              <Sparkles className="h-3 w-3" />
-              IA Ativa
-            </Badge>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Badge
+                  variant="secondary"
+                  className="ml-2 gap-1 bg-primary/10 text-primary border-primary/20 animate-pulse cursor-pointer hover:bg-primary/20"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  IA Ativa
+                  <ChevronDown className="h-3 w-3 ml-1" />
+                </Badge>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={handleToggleAI} disabled={isUpdatingAI} className="gap-2">
+                  <Power className="h-4 w-4" />
+                  Desativar IA
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleRemoveAgent} disabled={isUpdatingAI} className="gap-2 text-destructive focus:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                  Remover agente
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         <div className="flex items-center gap-2">
