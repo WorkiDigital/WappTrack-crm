@@ -1,4 +1,27 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
+import { getDeliverySettings } from './messageAggregator.ts';
+
+function splitIntoChunks(text: string, maxSize: number): string[] {
+  if (text.length <= maxSize) return [text];
+  const chunks: string[] = [];
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  let current = '';
+  for (const sentence of sentences) {
+    if ((current + ' ' + sentence).trim().length > maxSize && current.length > 0) {
+      chunks.push(current.trim());
+      current = sentence;
+    } else {
+      current = current ? current + ' ' + sentence : sentence;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.length > 0 ? chunks : [text];
+}
+
+function getChunkDelay(chunk: string, typingSpeedCps: number, minMs: number, maxMs: number): number {
+  const ms = (chunk.length / typingSpeedCps) * 1000;
+  return Math.min(maxMs, Math.max(minMs, ms));
+}
 
 export async function handleAgentLogic(params: {
     supabase: any;
@@ -7,14 +30,40 @@ export async function handleAgentLogic(params: {
     instanceName: string;
     realPhoneNumber: string;
 }) {
-    const { supabase, lead, messageContent, instanceName, realPhoneNumber } = params;
+    const { supabase, messageContent, instanceName, realPhoneNumber } = params;
+
+    console.log(`\n🤖 ═══════════════════════════════════════════════════════`);
+    console.log(`🤖 handleAgentLogic STARTED`);
+    console.log(`🤖 Lead ID: ${params.lead.id}`);
+    console.log(`🤖 Message: "${messageContent}"`);
+    console.log(`🤖 Instance: ${instanceName}`);
+    console.log(`🤖 ═══════════════════════════════════════════════════════`);
+
+    // 🔄 Re-fetch lead from DB to get the LATEST agent_id and current_stage_id
+    // (the lead object passed in may be stale from the initial query)
+    const { data: freshLead, error: freshLeadError } = await supabase
+        .from('leads')
+        .select('*, campaigns!leads_campaign_id_fkey(conversion_keywords, cancellation_keywords, pixel_id, facebook_access_token)')
+        .eq('id', params.lead.id)
+        .single();
+
+    if (freshLeadError || !freshLead) {
+        console.error(`🤖 ❌ Failed to re-fetch lead ${params.lead.id}:`, freshLeadError);
+        return;
+    }
+
+    const lead = freshLead;
+    console.log(`🤖 Fresh lead data - agent_id: ${lead.agent_id}, current_stage_id: ${lead.current_stage_id}`);
 
     // 1. Check for triggers if lead doesn't have an agent assigned
     if (!lead.agent_id) {
+        console.log(`🤖 No agent_id on lead, checking triggers...`);
         // FIX: check if the MESSAGE contains the trigger phrase (not the other way around)
         const { data: triggers } = await supabase
             .from('agent_triggers')
             .select('agent_id, phrase');
+
+        console.log(`🤖 Found ${(triggers || []).length} trigger(s) to check`);
 
         const msgLower = messageContent.trim().toLowerCase();
         const matched = (triggers || []).find((t: any) =>
@@ -29,16 +78,21 @@ export async function handleAgentLogic(params: {
                 .eq('id', lead.id);
 
             if (updateError) {
-                console.error("Error updating lead agent_id:", updateError);
+                console.error("🤖 ❌ Error updating lead agent_id:", updateError);
                 return;
             }
 
             lead.agent_id = matched.agent_id;
+        } else {
+            console.log(`🤖 No trigger matched for message: "${msgLower}". Agent will NOT process this message.`);
         }
+    } else {
+        console.log(`🤖 Lead already has agent_id: ${lead.agent_id}`);
     }
 
     // 2. If lead has an agent, process with AI
     if (lead.agent_id) {
+        console.log(`🤖 Step 2: Fetching agent ${lead.agent_id} from DB...`);
         const { data: agent, error: agentError } = await supabase
             .from('agents')
             .select(`
@@ -57,7 +111,8 @@ export async function handleAgentLogic(params: {
             .single();
 
         if (agentError || !agent || !agent.is_active) {
-            console.log(`🤖 Agent ${lead.agent_id} not found or inactive.`);
+            console.log(`🤖 ❌ Agent ${lead.agent_id} not found, inactive, or error:`, agentError);
+            console.log(`🤖 Agent data:`, agent ? { id: agent.id, is_active: agent.is_active, name: agent.name } : 'null');
             return;
         }
 
@@ -160,6 +215,8 @@ export async function handleAgentLogic(params: {
         const aiModel = companySettings?.ai_model || 'gpt-4o-mini';
         const aiApiKey = companySettings?.ai_api_key || Deno.env.get('OPENAI_API_KEY') || '';
 
+        console.log(`🤖 AI Config: provider=${aiProvider}, model=${aiModel}, hasKey=${!!aiApiKey}`);
+
         if (!aiApiKey) {
             console.warn(`⚠️ No AI API key configured for provider "${aiProvider}". Skipping AI response.`);
             return;
@@ -167,23 +224,39 @@ export async function handleAgentLogic(params: {
 
         // Fetch conversation history (last 30 messages), EXCLUDING the current message
         // (processClientMessage already saved it to DB before this runs)
-        const { data: history } = await supabase
+        const { data: history, error: historyError } = await supabase
             .from('lead_messages')
             .select('message_text, is_from_me, created_at')
             .eq('lead_id', lead.id)
             .order('created_at', { ascending: false })
             .limit(31);
 
-        // Filter out the current message to avoid duplication (normalize whitespace for comparison)
+        if (historyError) {
+            console.error(`🤖 ❌ Error fetching history:`, historyError);
+        }
+
+        console.log(`🤖 History: ${(history || []).length} messages found in DB`);
+
+        // FIX: Remove only the MOST RECENT matching user message (not ALL duplicates)
+        // This prevents breaking the conversation when the user sends similar messages
         const normalizedCurrent = messageContent.trim().replace(/\s+/g, ' ');
+        let removedOne = false;
         const filteredHistory = (history || [])
             .filter((m: any) => {
                 if (m.is_from_me) return true;
-                const normalizedMsg = (m.message_text || '').trim().replace(/\s+/g, ' ');
-                return normalizedMsg !== normalizedCurrent;
+                if (!removedOne) {
+                    const normalizedMsg = (m.message_text || '').trim().replace(/\s+/g, ' ');
+                    if (normalizedMsg === normalizedCurrent) {
+                        removedOne = true;
+                        return false; // Remove only the first (most recent) match
+                    }
+                }
+                return true;
             })
             .slice(0, 30)
             .reverse();
+
+        console.log(`🤖 Filtered history: ${filteredHistory.length} messages (removed current: ${removedOne})`);
 
         const cleanHistoryText = (text: string) =>
             (text || '').replace(/\[DATA:[\s\S]*?\]/g, '').replace('[AVANÇAR_ETAPA]', '').trim();
@@ -197,9 +270,12 @@ export async function handleAgentLogic(params: {
             { role: "user", content: messageContent }
         ];
 
+        console.log(`🤖 Total messages to AI: ${messages.length} (1 system + ${filteredHistory.length} history + 1 current)`);
+
         let aiResponse = '';
 
         try {
+            console.log(`🤖 Calling ${aiProvider} API with model ${aiModel}...`);
             if (aiProvider === 'openai') {
                 aiResponse = await callOpenAI(aiApiKey, aiModel, messages);
             } else if (aiProvider === 'anthropic') {
@@ -207,11 +283,13 @@ export async function handleAgentLogic(params: {
             } else if (aiProvider === 'gemini') {
                 aiResponse = await callGemini(aiApiKey, aiModel, messages);
             } else {
-                console.error(`Unknown AI provider: ${aiProvider}`);
+                console.error(`🤖 ❌ Unknown AI provider: ${aiProvider}`);
                 return;
             }
+            console.log(`🤖 ✅ AI response received (${aiResponse.length} chars): "${aiResponse.substring(0, 100)}..."`);
         } catch (error) {
-            console.error(`💥 AI (${aiProvider}) error:`, error);
+            console.error(`🤖 💥 AI (${aiProvider}) error:`, error);
+            console.error(`🤖 💥 Error details:`, (error as Error)?.message, (error as Error)?.stack);
             return;
         }
 
@@ -252,6 +330,7 @@ export async function handleAgentLogic(params: {
             .trim();
 
         // Send response via Evolution
+        console.log(`🤖 Sending response via Evolution to ${realPhoneNumber}: "${cleanResponse.substring(0, 80)}..."`);
         await sendThroughEvolution({
             supabase,
             instanceName,
@@ -259,6 +338,7 @@ export async function handleAgentLogic(params: {
             message: cleanResponse,
             leadId: lead.id
         });
+        console.log(`🤖 ✅ Response sent successfully!`);
 
         // Update lead state
         const updateData: any = {
@@ -309,7 +389,7 @@ export async function handleAgentLogic(params: {
                                         pixelId: campaign.pixel_id,
                                         accessToken: campaign.facebook_access_token,
                                         eventName: 'Lead',
-                                        testEventCode: campaign.test_event_code,
+                                        testEventCode: null,
                                         userData: {
                                             phone: realPhoneNumber,
                                             fbc: lead.collected_variables?.fbclid,
@@ -358,10 +438,22 @@ export async function handleAgentLogic(params: {
             }
         }
 
-        await supabase
+        const { error: leadUpdateError } = await supabase
             .from('leads')
             .update(updateData)
             .eq('id', lead.id);
+
+        if (leadUpdateError) {
+            console.error(`🤖 ❌ Error updating lead state:`, leadUpdateError);
+        } else {
+            console.log(`🤖 ✅ Lead ${lead.id} state updated:`, Object.keys(updateData));
+        }
+
+        console.log(`🤖 ═══════════════════════════════════════════════════════`);
+        console.log(`🤖 handleAgentLogic COMPLETED for lead ${lead.id}`);
+        console.log(`🤖 ═══════════════════════════════════════════════════════\n`);
+    } else {
+        console.log(`🤖 ⏭️ No agent_id on lead ${lead.id} after trigger check. Skipping AI processing.`);
     }
 }
 
@@ -473,7 +565,7 @@ async function sendThroughEvolution(params: {
     if (!instance) return;
 
     const evolutionApiKey = Deno.env.get('EVOLUTION_API_KEY');
-    const evolutionBaseUrl = Deno.env.get('EVOLUTION_API_URL') || instance.base_url || "https://evoapi.workidigital.tech";
+    const evolutionBaseUrl = Deno.env.get('EVOLUTION_API_URL') || instance.base_url || "https://painelevo.workidigital.tech";
 
     const headers = {
         'Content-Type': 'application/json',
@@ -481,39 +573,81 @@ async function sendThroughEvolution(params: {
     };
 
     try {
-        // Simulate typing: send "composing" presence
-        await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ number: phone, options: { presence: 'composing' } })
-        }).catch(() => {}); // ignore errors, presence is optional
+        const settings = await getDeliverySettings(supabase);
+        const useChunks = settings.feature_enabled && settings.split_long_messages && message.length > settings.max_chunk_size;
 
-        // Delay proportional to message length (min 2s, max 8s)
-        const typingMs = Math.min(8000, Math.max(2000, message.length * 50));
-        await new Promise(resolve => setTimeout(resolve, typingMs));
+        if (useChunks) {
+            const chunks = splitIntoChunks(message, settings.max_chunk_size);
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                // Start typing
+                await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
+                    method: 'POST', headers,
+                    body: JSON.stringify({ number: phone, options: { presence: 'composing' } })
+                }).catch(() => {});
 
-        // Stop typing presence
-        await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ number: phone, options: { presence: 'paused' } })
-        }).catch(() => {});
+                const delay = getChunkDelay(chunk, settings.typing_speed_cps, settings.min_typing_delay_ms, settings.max_typing_delay_ms);
+                await new Promise(r => setTimeout(r, delay));
 
-        const response = await fetch(`${evolutionBaseUrl}/message/sendText/${instanceName}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                number: phone,
-                text: message
-            })
-        });
+                // Stop typing
+                await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
+                    method: 'POST', headers,
+                    body: JSON.stringify({ number: phone, options: { presence: 'paused' } })
+                }).catch(() => {});
 
-        if (response.ok) {
-            const evolutionData = await response.json();
+                const response = await fetch(`${evolutionBaseUrl}/message/sendText/${instanceName}`, {
+                    method: 'POST', headers,
+                    body: JSON.stringify({ number: phone, text: chunk })
+                });
 
-            await supabase
-                .from('lead_messages')
-                .insert({
+                if (response.ok) {
+                    const evolutionData = await response.json();
+                    const isLast = i === chunks.length - 1;
+                    await supabase.from('lead_messages').insert({
+                        lead_id: leadId,
+                        message_text: chunk,
+                        is_from_me: true,
+                        status: 'sent',
+                        whatsapp_message_id: evolutionData.key?.id || null,
+                        instance_name: instanceName
+                    });
+                    if (isLast) {
+                        await supabase.from('leads').update({
+                            last_contact_date: new Date().toISOString(),
+                            last_message: chunk,
+                            evolution_status: 'sent'
+                        }).eq('id', leadId);
+                    }
+                }
+
+                // Pause between chunks
+                if (i < chunks.length - 1) {
+                    await new Promise(r => setTimeout(r, settings.inter_chunk_pause_ms));
+                }
+            }
+        } else {
+            // Original behavior: single message with typing simulation
+            await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
+                method: 'POST', headers,
+                body: JSON.stringify({ number: phone, options: { presence: 'composing' } })
+            }).catch(() => {});
+
+            const typingMs = Math.min(8000, Math.max(2000, message.length * 50));
+            await new Promise(resolve => setTimeout(resolve, typingMs));
+
+            await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
+                method: 'POST', headers,
+                body: JSON.stringify({ number: phone, options: { presence: 'paused' } })
+            }).catch(() => {});
+
+            const response = await fetch(`${evolutionBaseUrl}/message/sendText/${instanceName}`, {
+                method: 'POST', headers,
+                body: JSON.stringify({ number: phone, text: message })
+            });
+
+            if (response.ok) {
+                const evolutionData = await response.json();
+                await supabase.from('lead_messages').insert({
                     lead_id: leadId,
                     message_text: message,
                     is_from_me: true,
@@ -521,15 +655,12 @@ async function sendThroughEvolution(params: {
                     whatsapp_message_id: evolutionData.key?.id || null,
                     instance_name: instanceName
                 });
-
-            await supabase
-                .from('leads')
-                .update({
+                await supabase.from('leads').update({
                     last_contact_date: new Date().toISOString(),
                     last_message: message,
                     evolution_status: 'sent'
-                })
-                .eq('id', leadId);
+                }).eq('id', leadId);
+            }
         }
     } catch (error) {
         console.error("Error sending Evolution message:", error);

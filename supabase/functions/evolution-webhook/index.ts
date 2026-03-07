@@ -14,6 +14,7 @@ import {
   validateWebhookPayload
 } from "./security.ts";
 import { handleAgentLogic } from "./aiAgentHandler.ts";
+import { getDeliverySettings, scheduleAggregation, tryAcquireProcessingLock, releaseProcessingLock, getRecentMessages } from "./messageAggregator.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -54,10 +55,35 @@ serve(async (req) => {
       );
     }
 
-    console.log('Evolution webhook received:', JSON.stringify(body, null, 2));
+    const eventName = (body.event || '').toLowerCase().replace(/_/g, '.');
+    console.log('Evolution webhook received event:', eventName, 'instance:', body.instance);
 
-    if (body.event === 'messages.upsert' && body.data) {
-      const message = body.data;
+    // Helper: normalize data to always be a single message object
+    const normalizeData = (data: any): any => {
+      if (Array.isArray(data)) return data[0]; // Evolution API v2 may send array
+      return data;
+    };
+
+    // Helper: decode base64 data if webhookBase64 is enabled in Evolution API
+    const decodeData = (data: any): any => {
+      if (typeof data === 'string') {
+        try {
+          return JSON.parse(atob(data));
+        } catch {
+          return data;
+        }
+      }
+      return data;
+    };
+
+    if ((eventName === 'messages.upsert') && body.data) {
+      const message = normalizeData(decodeData(body.data));
+      if (!message) {
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200
+        });
+      }
+
       const remoteJid = message.key?.remoteJid;
       let instanceName: string;
       const isFromMe = message.key?.fromMe;
@@ -117,7 +143,7 @@ serve(async (req) => {
 
         const { data: matchedLeads, error: searchError } = await supabase
           .from('leads')
-          .select('*, campaigns!leads_campaign_id_fkey(conversion_keywords, cancellation_keywords, pixel_id, facebook_access_token, test_event_code)')
+          .select('*, campaigns!leads_campaign_id_fkey(conversion_keywords, cancellation_keywords, pixel_id, facebook_access_token)')
           .in('phone', phoneVariations);
 
         if (searchError) {
@@ -174,33 +200,54 @@ serve(async (req) => {
         // 🤖 INTEGRAR LÓGICA DE AGENTE IA
         if (!isFromMe && leadsToProcess.length > 0) {
           for (const lead of leadsToProcess) {
-            await handleAgentLogic({
-              supabase,
-              lead,
-              messageContent: messageData.text,
-              instanceName,
-              realPhoneNumber
-            });
+            const settings = await getDeliverySettings(supabase);
+            if (settings?.feature_enabled && settings?.aggregation_window_ms > 0) {
+              await scheduleAggregation(supabase, lead.id);
+              await new Promise(r => setTimeout(r, settings.aggregation_window_ms));
+              const acquired = await tryAcquireProcessingLock(supabase, lead.id, settings.aggregation_window_ms);
+              if (!acquired) { continue; }
+              const consolidated = await getRecentMessages(supabase, lead.id, settings.aggregation_window_ms);
+              await handleAgentLogic({
+                supabase,
+                lead,
+                messageContent: consolidated || messageData.text,
+                instanceName,
+                realPhoneNumber
+              });
+              await releaseProcessingLock(supabase, lead.id);
+            } else {
+              await handleAgentLogic({
+                supabase,
+                lead,
+                messageContent: messageData.text,
+                instanceName,
+                realPhoneNumber
+              });
+            }
           }
         }
       }
-    } else if (body.event === 'messages.update' && body.data) {
+    } else if ((eventName === 'messages.update') && body.data) {
       // ✅ Tratar atualização de status da mensagem (checks)
-      const update = body.data;
-      if (update && update.key?.id) {
-        const whatsappId = update.key.id;
-        const status = update.status; // 3=enviado, 4=entregue, 5=lido
+      const rawUpdate = decodeData(body.data);
+      const updates = Array.isArray(rawUpdate) ? rawUpdate : [rawUpdate];
 
-        let statusLabel = 'sent';
-        if (status === 4 || status === 'DELIVERY_ACK') statusLabel = 'delivered';
-        if (status === 5 || status === 'READ') statusLabel = 'read';
+      for (const update of updates) {
+        if (update && update.key?.id) {
+          const whatsappId = update.key.id;
+          const status = update.status; // 3=enviado, 4=entregue, 5=lido
 
-        console.log(`🔄 Atualizando status da mensagem ${whatsappId} para: ${statusLabel} (${status})`);
+          let statusLabel = 'sent';
+          if (status === 4 || status === 'DELIVERY_ACK') statusLabel = 'delivered';
+          if (status === 5 || status === 'READ') statusLabel = 'read';
 
-        await supabase
-          .from('lead_messages')
-          .update({ status: statusLabel })
-          .eq('whatsapp_message_id', whatsappId);
+          console.log(`🔄 Atualizando status da mensagem ${whatsappId} para: ${statusLabel} (${status})`);
+
+          await supabase
+            .from('lead_messages')
+            .update({ status: statusLabel })
+            .eq('whatsapp_message_id', whatsappId);
+        }
       }
     }
 
