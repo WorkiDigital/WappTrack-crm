@@ -146,10 +146,16 @@ export async function handleAgentLogic(params: {
 
     // 2. If lead has an agent, process with AI
     if (lead.agent_id) {
-        console.log(`🤖 Step 2: Fetching agent ${lead.agent_id} from DB...`);
-        const { data: agent, error: agentError } = await supabase
-            .from('agents')
-            .select(`
+        console.log(`🤖 Step 2: Fetching agent, settings, history and instance in parallel...`);
+
+        // ── Parallel fetch: agent + company_settings + history + whatsapp_instance ──
+        const [
+            { data: agent, error: agentError },
+            { data: companySettingsData },
+            { data: history, error: historyError },
+            { data: instanceData }
+        ] = await Promise.all([
+            supabase.from('agents').select(`
                 *,
                 stages:agent_stages(
                     *,
@@ -160,9 +166,11 @@ export async function handleAgentLogic(params: {
                     is_enabled,
                     knowledge_bases(*)
                 )
-            `)
-            .eq('id', lead.agent_id)
-            .single();
+            `).eq('id', lead.agent_id).single(),
+            supabase.from('company_settings').select('ai_provider, ai_api_key, ai_model').limit(1).single(),
+            supabase.from('lead_messages').select('message_text, is_from_me, created_at').eq('lead_id', lead.id).order('created_at', { ascending: false }).limit(21),
+            supabase.from('whatsapp_instances').select('*').eq('instance_name', instanceName).single()
+        ]);
 
         if (agentError || !agent || !agent.is_active) {
             console.log(`🤖 ❌ Agent ${lead.agent_id} not found, inactive, or error:`, agentError);
@@ -257,17 +265,10 @@ export async function handleAgentLogic(params: {
         systemPrompt += `1. Se atingir os critérios de sucesso desta etapa, inclua [AVANÇAR_ETAPA] no final — mas NUNCA mencione ao lead que está avançando de etapa, mudando de fase ou qualquer coisa do tipo. A transição deve ser completamente invisível para o lead.\n`;
         systemPrompt += `2. SOMENTE quando o usuário informar um dado novo nesta mensagem, inclua ao final (nunca no início ou meio): [DATA:{"campo": "valor"}]. NUNCA inclua [DATA:...] em saudações, apresentações ou quando nenhum dado novo foi informado pelo usuário nesta mensagem.\n`;
 
-        // --- DYNAMIC AI PROVIDER ---
-        // Read provider config from company_settings (saved via AiProviderSettings UI)
-        const { data: companySettings } = await supabase
-            .from('company_settings')
-            .select('ai_provider, ai_api_key, ai_model')
-            .limit(1)
-            .single();
-
-        const aiProvider = companySettings?.ai_provider || 'openai';
-        const aiModel = companySettings?.ai_model || 'gpt-4o-mini';
-        const aiApiKey = companySettings?.ai_api_key || Deno.env.get('OPENAI_API_KEY') || '';
+        // --- DYNAMIC AI PROVIDER (pre-fetched in parallel above) ---
+        const aiProvider = companySettingsData?.ai_provider || 'openai';
+        const aiModel = companySettingsData?.ai_model || 'gpt-4o-mini';
+        const aiApiKey = companySettingsData?.ai_api_key || Deno.env.get('OPENAI_API_KEY') || '';
 
         console.log(`🤖 AI Config: provider=${aiProvider}, model=${aiModel}, hasKey=${!!aiApiKey}`);
 
@@ -276,15 +277,7 @@ export async function handleAgentLogic(params: {
             return;
         }
 
-        // Fetch conversation history (last 30 messages), EXCLUDING the current message
-        // (processClientMessage already saved it to DB before this runs)
-        const { data: history, error: historyError } = await supabase
-            .from('lead_messages')
-            .select('message_text, is_from_me, created_at')
-            .eq('lead_id', lead.id)
-            .order('created_at', { ascending: false })
-            .limit(31);
-
+        // History pre-fetched in parallel above (last 20 messages)
         if (historyError) {
             console.error(`🤖 ❌ Error fetching history:`, historyError);
         }
@@ -383,14 +376,15 @@ export async function handleAgentLogic(params: {
             .replace(/\[DATA:[\s\S]*?\]/g, '')
             .trim();
 
-        // Send response via Evolution
+        // Send response via Evolution (pass pre-fetched instance to avoid extra DB query)
         console.log(`🤖 Sending response via Evolution to ${realPhoneNumber}: "${cleanResponse.substring(0, 80)}..."`);
         await sendThroughEvolution({
             supabase,
             instanceName,
             phone: realPhoneNumber,
             message: cleanResponse,
-            leadId: lead.id
+            leadId: lead.id,
+            instance: instanceData
         });
         console.log(`🤖 ✅ Response sent successfully!`);
 
@@ -424,7 +418,8 @@ export async function handleAgentLogic(params: {
                         instanceName,
                         phone: realPhoneNumber,
                         message: cleanOpening,
-                        leadId: lead.id
+                        leadId: lead.id,
+                        instance: instanceData
                     });
                     console.log(`📬 Sent opening message for stage: ${nextStage.name}`);
                 }
@@ -607,14 +602,16 @@ async function sendThroughEvolution(params: {
     phone: string;
     message: string;
     leadId: string;
+    instance?: any;
 }) {
     const { supabase, instanceName, phone, message, leadId } = params;
 
-    const { data: instance } = await supabase
+    // Use pre-fetched instance if available, otherwise fetch (fallback for safety)
+    const instance = params.instance || (await supabase
         .from('whatsapp_instances')
         .select('*')
         .eq('instance_name', instanceName)
-        .single();
+        .single()).data;
 
     if (!instance) return;
 
