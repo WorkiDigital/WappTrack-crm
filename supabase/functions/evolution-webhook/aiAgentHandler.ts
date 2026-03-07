@@ -56,11 +56,18 @@ function splitIntoChunks(text: string, maxChars: number): string[] {
 /**
  * Retorna delay de typing baseado no tamanho do chunk.
  */
-function getChunkDelay(chunk: string, settings: any): number {
+function getChunkDelay(chunk: string, settings: any, totalChunks: number = 1): number {
   const len = chunk.length;
-  if (len <= 60) return settings.short_delay_ms || 2000;
-  if (len <= 120) return settings.medium_delay_ms || 3000;
-  return settings.long_delay_ms || 4500;
+  let base: number;
+  if (len <= 60) base = settings.short_delay_ms ?? 1100;
+  else if (len <= 120) base = settings.medium_delay_ms ?? 2100;
+  else base = settings.long_delay_ms ?? 3200;
+
+  // Acréscimo por quantidade de chunks para parecer mais humano
+  if (totalChunks >= 4) base += 700;
+  else if (totalChunks >= 3) base += 400;
+
+  return base;
 }
 
 /**
@@ -674,7 +681,7 @@ async function sendThroughEvolution(params: {
 
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
-            const typingMs = getChunkDelay(chunk, settings);
+            const typingMs = getChunkDelay(chunk, settings, chunks.length);
 
             // 1. Simula digitação via sendPresence (inclui delay interno da Evolution API)
             if (settings.simulate_typing) {
@@ -718,10 +725,13 @@ async function sendThroughEvolution(params: {
 
             // 5. Pausa entre chunks (exceto após o último)
             if (i < chunks.length - 1) {
-                const pause = randomPause(
-                    settings.pause_between_chunks_min_ms,
-                    settings.pause_between_chunks_max_ms
-                );
+                const pauseMin = chunks.length >= 4
+                    ? 1000
+                    : (settings.pause_between_chunks_min_ms ?? 700);
+                const pauseMax = chunks.length >= 4
+                    ? 2200
+                    : (settings.pause_between_chunks_max_ms ?? 1700);
+                const pause = randomPause(pauseMin, pauseMax);
                 await new Promise(resolve => setTimeout(resolve, pause));
             }
         }
