@@ -44,8 +44,14 @@ const Conversations = () => {
 
   const lastConsumedNavIdRef = useRef<string | null>(null);
   const selectedLeadIdRef = useRef<string | null>(null);
+  // Ref to track page to avoid re-creating fetchLeads callback on page change
+  const pageRef = useRef(0);
 
-  // Keep ref in sync with state
+  // Keep selectedLeadIdRef in sync for notification sound logic
+  useEffect(() => {
+    selectedLeadIdRef.current = selectedLead?.id ?? null;
+  }, [selectedLead]);
+
   // Auto-sync webhooks on mount to ensure real-time is always active
   useEffect(() => {
     const autoSync = async () => {
@@ -69,15 +75,13 @@ const Conversations = () => {
         setIsFetchingMore(true);
       } else {
         setIsLoading(true);
-        // Reset page when doing a fresh fetch
+        pageRef.current = 0;
         setPage(0);
       }
 
-      const currentPage = isLoadMore ? page + 1 : 0;
+      const currentPage = isLoadMore ? pageRef.current + 1 : 0;
       const from = currentPage * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
-
-      console.log(`Fetching leads from ${from} to ${to}`);
 
       const { data, error } = await supabase
         .from('leads')
@@ -91,6 +95,7 @@ const Conversations = () => {
 
       if (isLoadMore) {
         setLeads((prev) => [...prev, ...newLeads]);
+        pageRef.current = currentPage;
         setPage(currentPage);
       } else {
         setLeads(newLeads);
@@ -104,12 +109,12 @@ const Conversations = () => {
       setIsLoading(false);
       setIsFetchingMore(false);
     }
-  }, [page]);
+  }, []); // no page dependency — pageRef tracks current page
 
-  // Carregar leads uma vez
+  // Carregar leads uma vez na montagem
   useEffect(() => {
     fetchLeads();
-  }, [fetchLeads]);
+  }, []);
 
   // Consumir state de navegação (Leads -> Conversas)
   useEffect(() => {

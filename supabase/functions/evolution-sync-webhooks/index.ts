@@ -24,7 +24,7 @@ serve(async (req) => {
         const supabaseUrl = Deno.env.get('SUPABASE_URL');
         const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
         const evolutionApiKey = Deno.env.get('EVOLUTION_API_KEY');
-        const evolutionBaseUrl = Deno.env.get('EVOLUTION_API_URL') || "https://evoapi.workidigital.tech";
+        const evolutionBaseUrl = Deno.env.get('EVOLUTION_API_URL') || "https://painelevo.workidigital.tech";
 
         if (!supabaseUrl || !supabaseAnonKey) {
             throw new Error('Supabase environment variables (URL/ANON) missing');
@@ -67,7 +67,7 @@ serve(async (req) => {
             });
         }
 
-        const webhookUrl = `https://qdilrnnfmjkunxmukoek.supabase.co/functions/v1/evolution-webhook`;
+        const webhookUrl = `${supabaseUrl}/functions/v1/evolution-webhook`;
         const results = [];
 
         for (const inst of instances) {

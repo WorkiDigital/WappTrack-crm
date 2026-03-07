@@ -14,7 +14,13 @@ import {
   validateWebhookPayload
 } from "./security.ts";
 import { handleAgentLogic } from "./aiAgentHandler.ts";
-import { getDeliverySettings, scheduleAggregation, tryAcquireProcessingLock, releaseProcessingLock, getRecentMessages } from "./messageAggregator.ts";
+import {
+  getDeliverySettings,
+  scheduleAggregation,
+  tryAcquireProcessingLock,
+  releaseProcessingLock,
+  getRecentMessages
+} from "./messageAggregator.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -197,25 +203,45 @@ serve(async (req) => {
           }
         }
 
-        // 🤖 INTEGRAR LÓGICA DE AGENTE IA
+        // 🤖 INTEGRAR LÓGICA DE AGENTE IA (com agregação de mensagens)
         if (!isFromMe && leadsToProcess.length > 0) {
           for (const lead of leadsToProcess) {
             const settings = await getDeliverySettings(supabase);
+
             if (settings?.feature_enabled && settings?.aggregation_window_ms > 0) {
+              // ── Fluxo com agregação ──────────────────────────────────────────
+              // 1. Registra na fila (atualiza last_message_at)
               await scheduleAggregation(supabase, lead.id);
+
+              // 2. Dorme a janela de agregação
+              console.log(`⏳ [AGGREGATOR] Aguardando janela de ${settings.aggregation_window_ms}ms para lead ${lead.id}`);
               await new Promise(r => setTimeout(r, settings.aggregation_window_ms));
+
+              // 3. Disputa lock atômico — apenas 1 invocação processa
               const acquired = await tryAcquireProcessingLock(supabase, lead.id, settings.aggregation_window_ms);
-              if (!acquired) { continue; }
+              if (!acquired) {
+                console.log(`⏳ [AGGREGATOR] Lead ${lead.id}: lock não adquirido — outra invocação processará`);
+                continue;
+              }
+
+              // 4. Consolida mensagens recentes do período
               const consolidated = await getRecentMessages(supabase, lead.id, settings.aggregation_window_ms);
+              const finalContent = consolidated || messageData.text;
+
+              // 5. Chama IA uma única vez com conteúdo consolidado
               await handleAgentLogic({
                 supabase,
                 lead,
-                messageContent: consolidated || messageData.text,
+                messageContent: finalContent,
                 instanceName,
                 realPhoneNumber
               });
+
+              // 6. Libera lock
               await releaseProcessingLock(supabase, lead.id);
+
             } else {
+              // ── Comportamento original intacto ───────────────────────────────
               await handleAgentLogic({
                 supabase,
                 lead,

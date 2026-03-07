@@ -190,21 +190,6 @@ export const AgentKnowledgeTab = ({ agent, onUpdate }: AgentKnowledgeTabProps) =
                 </CardContent>
             </Card>
 
-            {/* Legacy/Specific Knowledge fallback */}
-            <Card className="border-dashed border-orange-200 bg-orange-50/20">
-                <CardHeader>
-                    <CardTitle className="text-sm font-bold text-orange-700 uppercase tracking-wider">Conhecimento Específico deste Agente</CardTitle>
-                    <CardDescription>Este campo será migrado em breve para o sistema de bibliotecas acima.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <Textarea
-                        value={agent.knowledge_content || ''}
-                        readOnly
-                        placeholder="Nenhum conhecimento específico definido."
-                        className="bg-transparent border-none focus-visible:ring-0 italic text-muted-foreground min-h-[60px]"
-                    />
-                </CardContent>
-            </Card>
         </div>
     );
 };

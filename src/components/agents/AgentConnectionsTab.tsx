@@ -99,6 +99,7 @@ export const AgentConnectionsTab = ({ agent, onUpdate }: AgentConnectionsTabProp
                         <Input
                             value={newTrigger}
                             onChange={(e) => setNewTrigger(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddTrigger()}
                             placeholder="Ex: Quero saber mais"
                         />
                         <Button size="icon" onClick={handleAddTrigger}><Plus className="h-4 w-4" /></Button>
@@ -189,7 +190,26 @@ export const AgentConnectionsTab = ({ agent, onUpdate }: AgentConnectionsTabProp
                     <CardDescription>Documentos globais que este agente pode consultar.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-sm text-muted-foreground italic">Em desenvolvimento: Vincule FAQs e tabelas de preços aqui.</p>
+                    <div className="flex items-center gap-3 p-4 border rounded-lg bg-blue-50/30 border-blue-200/50">
+                        <Book className="h-8 w-8 text-blue-400 shrink-0" />
+                        <div>
+                            <p className="text-sm font-medium">Gerencie as bases na aba <span className="text-primary font-bold">Conhecimento</span></p>
+                            <p className="text-xs text-muted-foreground mt-0.5">Crie FAQs, tabelas de preços e documentos na aba Conhecimento e vincule-os a este agente.</p>
+                        </div>
+                    </div>
+                    {agent.agent_knowledge_bases && agent.agent_knowledge_bases.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Vinculadas a este agente ({agent.agent_knowledge_bases.length})</p>
+                            <div className="flex flex-wrap gap-2">
+                                {agent.agent_knowledge_bases.map((akb) => (
+                                    <Badge key={akb.id} variant="secondary" className="gap-1">
+                                        <Book className="h-3 w-3" />
+                                        {akb.knowledge_base_id}
+                                    </Badge>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         </div>

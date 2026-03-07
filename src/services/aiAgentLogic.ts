@@ -39,17 +39,25 @@ export const aiAgentLogic = {
      */
     parseAIResponse(response: string) {
         const shouldAdvance = response.includes('[AVANÇAR_ETAPA]');
-        const cleanResponse = response.replace('[AVANÇAR_ETAPA]', '').trim();
+        let cleanResponse = response.replace('[AVANÇAR_ETAPA]', '').trim();
 
-        // Simple regex or logic to extract JSON-like data if present
-        // This is a placeholder for a more robust parser
-        const jsonMatch = response.match(/\{.*\}/s);
+        // Extract [DATA:{...}] tag specifically
+        const dataTagMatch = response.match(/\[DATA:(\{[\s\S]*?\})\]/);
         let extractedData = null;
-        if (jsonMatch) {
+        if (dataTagMatch) {
             try {
-                extractedData = JSON.parse(jsonMatch[0]);
+                extractedData = JSON.parse(dataTagMatch[1]);
+                cleanResponse = cleanResponse.replace(dataTagMatch[0], '').trim();
             } catch (e) {
-                console.error("Failed to parse extracted JSON from AI", e);
+                // fallback: try to find any JSON object
+                const jsonMatch = response.match(/\{[\s\S]*?\}/);
+                if (jsonMatch) {
+                    try {
+                        extractedData = JSON.parse(jsonMatch[0]);
+                    } catch {
+                        // ignore
+                    }
+                }
             }
         }
 

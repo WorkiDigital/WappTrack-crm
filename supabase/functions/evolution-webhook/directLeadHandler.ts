@@ -68,11 +68,55 @@ export const handleDirectLead = async ({
     const existingLead = await checkExistingLead(supabase, phoneVariations);
 
     if (existingLead) {
-      console.log(`⚠️ [DIRECT LEAD] Lead already exists: ${existingLead.id}`);
+      console.log(`⚠️ [DIRECT LEAD] Lead already exists: ${existingLead.id} — saving message and returning lead`);
       if (clickData) {
         await markClickConverted(supabase, clickData, existingLead.id);
       }
-      return;
+
+      // Save the inbound message for the existing lead (so it appears in the chat)
+      const { cleanMessageFromInvisibleToken } = await import('./messageProcessors.ts');
+      const cleanedMsg = cleanMessageFromInvisibleToken(messageContent);
+
+      const msgPayload = {
+        lead_id: existingLead.id,
+        message_text: cleanedMsg || messageContent,
+        is_from_me: false,
+        whatsapp_message_id: message.key?.id || null,
+        instance_name: instanceName,
+        status: 'received',
+        media_url: messageData?.mediaUrl || null,
+        media_type: messageData?.mediaType || null,
+        mime_type: messageData?.mimeType || null,
+        file_name: messageData?.fileName || null,
+      };
+
+      const { error: msgError } = await supabase.from('lead_messages').insert(msgPayload);
+
+      if (msgError) {
+        console.error(`❌ [DIRECT LEAD] Failed to save message for existing lead:`, msgError);
+        // Fallback: save text only if media columns are missing
+        if (msgError.code === '42703') {
+          await supabase.from('lead_messages').insert({
+            lead_id: existingLead.id,
+            message_text: cleanedMsg || messageContent,
+            is_from_me: false,
+            whatsapp_message_id: message.key?.id || null,
+            instance_name: instanceName,
+            status: 'received',
+          });
+        }
+      } else {
+        console.log(`✅ [DIRECT LEAD] Message saved for existing lead ${existingLead.id}`);
+      }
+
+      // Update lead with last message and unread count
+      await supabase.from('leads').update({
+        last_message: cleanedMsg || messageContent,
+        last_contact_date: new Date().toISOString(),
+        unread_count: (existingLead.unread_count || 0) + 1,
+      }).eq('id', existingLead.id);
+
+      return existingLead;
     }
 
     // Step 4: Get device data

@@ -64,7 +64,7 @@ export async function resolveCampaign(
     }
   }
 
-  // Strategy 3: Fallback to user lookup by instance
+  // Strategy 3: Fallback to user lookup by instance RPC
   if (!responsibleUserId) {
     console.log(`🔄 [CAMPAIGN RESOLVER] Trying user fallback via get_user_by_instance...`);
     try {
@@ -74,10 +74,44 @@ export async function resolveCampaign(
 
       if (userData && !error) {
         responsibleUserId = userData;
-        console.log(`✅ [CAMPAIGN RESOLVER] User found via fallback: ${responsibleUserId}`);
+        console.log(`✅ [CAMPAIGN RESOLVER] User found via RPC fallback: ${responsibleUserId}`);
       }
     } catch (err) {
       console.log(`❌ [CAMPAIGN RESOLVER] Error calling get_user_by_instance:`, err);
+    }
+  }
+
+  // Strategy 4: Last resort — get any user who owns a WhatsApp instance
+  if (!responsibleUserId) {
+    console.log(`🔄 [CAMPAIGN RESOLVER] Trying last-resort user lookup via whatsapp_instances...`);
+    try {
+      const { data: instanceOwner } = await supabase
+        .from('whatsapp_instances')
+        .select('user_id')
+        .eq('instance_name', instanceName)
+        .not('user_id', 'is', null)
+        .limit(1)
+        .maybeSingle();
+
+      if (instanceOwner?.user_id) {
+        responsibleUserId = instanceOwner.user_id;
+        console.log(`✅ [CAMPAIGN RESOLVER] User found via whatsapp_instances: ${responsibleUserId}`);
+      } else {
+        // Any instance owner as absolute last resort
+        const { data: anyInstance } = await supabase
+          .from('whatsapp_instances')
+          .select('user_id')
+          .not('user_id', 'is', null)
+          .limit(1)
+          .maybeSingle();
+
+        if (anyInstance?.user_id) {
+          responsibleUserId = anyInstance.user_id;
+          console.log(`✅ [CAMPAIGN RESOLVER] User found via any whatsapp_instance: ${responsibleUserId}`);
+        }
+      }
+    } catch (err) {
+      console.log(`❌ [CAMPAIGN RESOLVER] Error in last-resort user lookup:`, err);
     }
   }
 
