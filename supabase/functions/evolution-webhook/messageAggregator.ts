@@ -124,7 +124,8 @@ async function tryAcquireProcessingLockFallback(
   windowMs: number
 ): Promise<boolean> {
   try {
-    const cutoff = new Date(Date.now() - windowMs).toISOString();
+    // Buffer de 1.5s para compensar imprecisão do timer JS
+    const cutoff = new Date(Date.now() - windowMs - 1500).toISOString();
 
     // Verifica se pode processar
     const { data: current } = await supabase
@@ -144,13 +145,15 @@ async function tryAcquireProcessingLockFallback(
     }
 
     // Tenta adquirir
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('ai_processing_queue')
       .update({ status: 'processing', locked_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('lead_id', leadId)
-      .eq('status', 'pending');
+      .eq('status', 'pending')
+      .select('lead_id');
 
-    return !error;
+    if (error) return false;
+    return updated && updated.length > 0;
   } catch (err) {
     console.error(`⏳ [AGGREGATOR] Erro no fallback lock:`, err);
     return false;
