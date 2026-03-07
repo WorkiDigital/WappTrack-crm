@@ -1,4 +1,74 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
+import { getDeliverySettings } from './messageAggregator.ts';
+
+// ── Helpers para envio humanizado ─────────────────────────────────────────────
+
+/**
+ * Quebra texto em chunks respeitando frases completas e limite de caracteres.
+ */
+function splitIntoChunks(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text];
+
+  const chunks: string[] = [];
+  // Divide por parágrafo primeiro
+  const paragraphs = text.split(/\n+/);
+
+  let current = '';
+  for (const para of paragraphs) {
+    if (!para.trim()) continue;
+
+    if ((current + (current ? '\n' : '') + para).length <= maxChars) {
+      current = current ? current + '\n' + para : para;
+      continue;
+    }
+
+    // Parágrafo maior que maxChars: divide por frases
+    if (current) { chunks.push(current.trim()); current = ''; }
+
+    const sentences = para.split(/(?<=[.!?])\s+/);
+    for (const sentence of sentences) {
+      if (!sentence.trim()) continue;
+      if ((current + (current ? ' ' : '') + sentence).length <= maxChars) {
+        current = current ? current + ' ' + sentence : sentence;
+      } else {
+        if (current) { chunks.push(current.trim()); current = ''; }
+        // Frase ainda maior que maxChars: corta em palavras
+        if (sentence.length > maxChars) {
+          const words = sentence.split(' ');
+          for (const word of words) {
+            if ((current + (current ? ' ' : '') + word).length <= maxChars) {
+              current = current ? current + ' ' + word : word;
+            } else {
+              if (current) { chunks.push(current.trim()); }
+              current = word;
+            }
+          }
+        } else {
+          current = sentence;
+        }
+      }
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.filter(c => c.length > 0);
+}
+
+/**
+ * Retorna delay de typing baseado no tamanho do chunk.
+ */
+function getChunkDelay(chunk: string, settings: any): number {
+  const len = chunk.length;
+  if (len <= 60) return settings.short_delay_ms || 2000;
+  if (len <= 120) return settings.medium_delay_ms || 3000;
+  return settings.long_delay_ms || 4500;
+}
+
+/**
+ * Retorna pausa aleatória entre chunks.
+ */
+function randomPause(minMs: number, maxMs: number): number {
+  return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+}
 
 export async function handleAgentLogic(params: {
     supabase: any;
@@ -550,39 +620,35 @@ async function sendThroughEvolution(params: {
     };
 
     try {
-        // Simulate typing: send "composing" presence
-        await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ number: phone, options: { presence: 'composing' } })
-        }).catch(() => {}); // ignore errors, presence is optional
+        // Carrega configurações de entrega (feature flag)
+        const settings = await getDeliverySettings(supabase);
 
-        // Delay proportional to message length (min 2s, max 8s)
-        const typingMs = Math.min(8000, Math.max(2000, message.length * 50));
-        await new Promise(resolve => setTimeout(resolve, typingMs));
+        if (!settings?.feature_enabled || !settings?.split_long_messages) {
+            // ── Comportamento original intacto ────────────────────────────────
+            await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ number: phone, options: { presence: 'composing' } })
+            }).catch(() => {});
 
-        // Stop typing presence
-        await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ number: phone, options: { presence: 'paused' } })
-        }).catch(() => {});
+            const typingMs = Math.min(8000, Math.max(2000, message.length * 50));
+            await new Promise(resolve => setTimeout(resolve, typingMs));
 
-        const response = await fetch(`${evolutionBaseUrl}/message/sendText/${instanceName}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                number: phone,
-                text: message
-            })
-        });
+            await fetch(`${evolutionBaseUrl}/chat/updatePresence/${instanceName}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ number: phone, options: { presence: 'paused' } })
+            }).catch(() => {});
 
-        if (response.ok) {
-            const evolutionData = await response.json();
+            const response = await fetch(`${evolutionBaseUrl}/message/sendText/${instanceName}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ number: phone, text: message })
+            });
 
-            await supabase
-                .from('lead_messages')
-                .insert({
+            if (response.ok) {
+                const evolutionData = await response.json();
+                await supabase.from('lead_messages').insert({
                     lead_id: leadId,
                     message_text: message,
                     is_from_me: true,
@@ -590,16 +656,86 @@ async function sendThroughEvolution(params: {
                     whatsapp_message_id: evolutionData.key?.id || null,
                     instance_name: instanceName
                 });
-
-            await supabase
-                .from('leads')
-                .update({
+                await supabase.from('leads').update({
                     last_contact_date: new Date().toISOString(),
                     last_message: message,
                     evolution_status: 'sent'
-                })
-                .eq('id', leadId);
+                }).eq('id', leadId);
+            }
+            return;
         }
+
+        // ── Envio humanizado: chunk por chunk ─────────────────────────────────
+        console.log(`🗣️ [HUMANIZED] Enviando mensagem em chunks para ${phone}`);
+        const chunks = splitIntoChunks(message, settings.max_chars_per_chunk);
+        console.log(`🗣️ [HUMANIZED] ${chunks.length} chunk(s) gerado(s)`);
+
+        let lastMessageId: string | null = null;
+
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            const typingMs = getChunkDelay(chunk, settings);
+
+            // 1. Simula digitação via sendPresence (inclui delay interno da Evolution API)
+            if (settings.simulate_typing) {
+                await fetch(`${evolutionBaseUrl}/chat/sendPresence/${instanceName}`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        number: phone,
+                        options: { delay: typingMs, presence: settings.presence_type || 'composing' }
+                    })
+                }).catch(() => {});
+            }
+
+            // 2. Aguarda o tempo de digitação
+            await new Promise(resolve => setTimeout(resolve, typingMs));
+
+            // 3. Envia o chunk
+            const response = await fetch(`${evolutionBaseUrl}/message/sendText/${instanceName}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ number: phone, text: chunk, delay: 0 })
+            });
+
+            // 4. Salva no banco
+            if (response.ok) {
+                const evolutionData = await response.json();
+                lastMessageId = evolutionData.key?.id || null;
+                await supabase.from('lead_messages').insert({
+                    lead_id: leadId,
+                    message_text: chunk,
+                    is_from_me: true,
+                    status: 'sent',
+                    whatsapp_message_id: lastMessageId,
+                    instance_name: instanceName
+                });
+                console.log(`🗣️ [HUMANIZED] Chunk ${i + 1}/${chunks.length} enviado: "${chunk.substring(0, 50)}..."`);
+            } else {
+                const errText = await response.text();
+                console.error(`🗣️ [HUMANIZED] Erro ao enviar chunk ${i + 1}:`, errText);
+            }
+
+            // 5. Pausa entre chunks (exceto após o último)
+            if (i < chunks.length - 1) {
+                const pause = randomPause(
+                    settings.pause_between_chunks_min_ms,
+                    settings.pause_between_chunks_max_ms
+                );
+                await new Promise(resolve => setTimeout(resolve, pause));
+            }
+        }
+
+        // Atualiza lead com o último chunk enviado (mantém comportamento atual)
+        const lastChunk = chunks[chunks.length - 1];
+        await supabase.from('leads').update({
+            last_contact_date: new Date().toISOString(),
+            last_message: lastChunk,
+            evolution_status: 'sent'
+        }).eq('id', leadId);
+
+        console.log(`🗣️ [HUMANIZED] Envio completo: ${chunks.length} chunk(s) para ${phone}`);
+
     } catch (error) {
         console.error("Error sending Evolution message:", error);
     }
