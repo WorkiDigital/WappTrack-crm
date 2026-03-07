@@ -63,8 +63,20 @@ serve(async (req) => {
       return data;
     };
 
+    // Helper: decode base64 data if webhookBase64 is enabled in Evolution API
+    const decodeData = (data: any): any => {
+      if (typeof data === 'string') {
+        try {
+          return JSON.parse(atob(data));
+        } catch {
+          return data;
+        }
+      }
+      return data;
+    };
+
     if ((eventName === 'messages.upsert') && body.data) {
-      const message = normalizeData(body.data);
+      const message = normalizeData(decodeData(body.data));
       if (!message) {
         return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200
@@ -199,7 +211,7 @@ serve(async (req) => {
       }
     } else if ((eventName === 'messages.update') && body.data) {
       // ✅ Tratar atualização de status da mensagem (checks)
-      const rawUpdate = body.data;
+      const rawUpdate = decodeData(body.data);
       const updates = Array.isArray(rawUpdate) ? rawUpdate : [rawUpdate];
 
       for (const update of updates) {
