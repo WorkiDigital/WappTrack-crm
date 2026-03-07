@@ -683,14 +683,15 @@ async function sendThroughEvolution(params: {
             const chunk = chunks[i];
             const typingMs = getChunkDelay(chunk, settings, chunks.length);
 
-            // 1. Simula digitação via sendPresence (inclui delay interno da Evolution API)
+            // 1. Simula digitação via sendPresence
             if (settings.simulate_typing) {
                 await fetch(`${evolutionBaseUrl}/chat/sendPresence/${instanceName}`, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify({
                         number: phone,
-                        options: { delay: typingMs, presence: settings.presence_type || 'composing' }
+                        delay: typingMs,
+                        presence: settings.presence_type || 'composing'
                     })
                 }).catch(() => {});
             }
