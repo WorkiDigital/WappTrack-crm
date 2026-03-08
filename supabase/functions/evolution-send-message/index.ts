@@ -162,13 +162,11 @@ serve(async (req) => {
         };
         messageText = caption || '[Vídeo]';
       } else if (mediaType === 'audio') {
-        endpoint = 'sendMedia';
+        endpoint = 'sendWhatsAppAudio';
         body = {
           number: phone,
-          mediatype: 'audio',
-          mimetype: mimeType || 'audio/ogg; codecs=opus',
-          media: mediaBase64,
-          fileName: fileName || 'audio.ogg',
+          audio: mediaBase64,
+          encoding: true,
         };
         messageText = '[Áudio]';
       }
@@ -228,7 +226,7 @@ serve(async (req) => {
       status: 'sent',
       whatsapp_message_id: evolutionData.key?.id || null,
       instance_name: instanceName,
-      media_url: mediaBase64 ? 'BASE64_SENT' : null,
+      media_url: null, // URL real chega via webhook quando a mensagem é confirmada
       media_type: mediaType,
       mime_type: mimeType,
       file_name: fileName,
