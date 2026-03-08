@@ -183,9 +183,9 @@ export const handleDirectLead = async ({
       console.log('✅ [DIRECT LEAD] First message saved in lead_messages');
     }
 
-    // Step 5.2: Fire Contact event via CAPI
+    // Step 5.2: Fire Lead event via CAPI
     if (linkedCampaign?.conversion_api_enabled && linkedCampaign?.pixel_id && linkedCampaign?.facebook_access_token) {
-      console.log('📊 [DIRECT LEAD] Disparando evento Contact via CAPI...');
+      console.log('📊 [DIRECT LEAD] Disparando evento Lead via CAPI...');
       try {
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
         const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
@@ -199,7 +199,7 @@ export const handleDirectLead = async ({
           body: JSON.stringify({
             pixelId: linkedCampaign.pixel_id,
             accessToken: linkedCampaign.facebook_access_token,
-            eventName: 'Contact',
+            eventName: 'Lead',
             userData: {
               phone: realPhoneNumber,
               clientIp: deviceData?.ip_address,
@@ -217,13 +217,13 @@ export const handleDirectLead = async ({
 
         if (capiResponse.ok) {
           const capiResult = await capiResponse.json();
-          console.log('✅ [DIRECT LEAD] Evento Contact enviado via CAPI:', capiResult);
+          console.log('✅ [DIRECT LEAD] Evento Lead enviado via CAPI:', capiResult);
         } else {
           const errorText = await capiResponse.text();
-          console.error('❌ [DIRECT LEAD] Erro ao enviar Contact via CAPI:', errorText);
+          console.error('❌ [DIRECT LEAD] Erro ao enviar Lead via CAPI:', errorText);
         }
       } catch (error) {
-        console.error('❌ [DIRECT LEAD] Exceção ao enviar Contact via CAPI:', error);
+        console.error('❌ [DIRECT LEAD] Exceção ao enviar Lead via CAPI:', error);
       }
     }
 

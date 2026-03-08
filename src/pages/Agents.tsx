@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
 import { Button } from "@/components/ui/button";
-import { Plus, Bot, Settings as SettingsIcon, Info, Layout, Copy } from 'lucide-react';
+import { Plus, Bot, Settings as SettingsIcon, Info, Layout, Copy, Power, Trash2 } from 'lucide-react';
 import { agentService } from '@/services/agentService';
 import { AgentWithRelations } from '@/types/agent';
 import { toast } from "sonner";
@@ -101,6 +101,29 @@ const Agents = () => {
         }
     };
 
+    const handleToggleAgent = async (e: React.MouseEvent, agent: AgentWithRelations) => {
+        e.stopPropagation();
+        try {
+            await agentService.updateAgent(agent.id, { is_active: !agent.is_active });
+            toast.success(agent.is_active ? 'Agente desativado' : 'Agente ativado');
+            fetchAgents();
+        } catch (error: any) {
+            toast.error(error?.message || 'Erro ao atualizar agente');
+        }
+    };
+
+    const handleDeleteAgent = async (e: React.MouseEvent, agent: AgentWithRelations) => {
+        e.stopPropagation();
+        if (!window.confirm(`Excluir o agente "${agent.name}"? Esta ação não pode ser desfeita.`)) return;
+        try {
+            await agentService.deleteAgent(agent.id);
+            toast.success('Agente excluído');
+            fetchAgents();
+        } catch (error: any) {
+            toast.error(error?.message || 'Erro ao excluir agente');
+        }
+    };
+
     const handleDuplicateAgent = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
         try {
@@ -166,15 +189,35 @@ const Agents = () => {
                                             <CardTitle className="mt-4">{agent.name}</CardTitle>
                                             <CardDescription className="flex items-center justify-between">
                                                 <span>{agent.persona_name || "Assistente"}</span>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                                                    onClick={(e) => handleDuplicateAgent(e, agent.id)}
-                                                    title="Duplicar Agente"
-                                                >
-                                                    <Copy className="h-4 w-4" />
-                                                </Button>
+                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                                        onClick={(e) => handleDuplicateAgent(e, agent.id)}
+                                                        title="Duplicar Agente"
+                                                    >
+                                                        <Copy className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className={`h-8 w-8 ${agent.is_active ? 'text-green-500 hover:text-yellow-500' : 'text-muted-foreground hover:text-green-500'}`}
+                                                        onClick={(e) => handleToggleAgent(e, agent)}
+                                                        title={agent.is_active ? 'Desativar Agente' : 'Ativar Agente'}
+                                                    >
+                                                        <Power className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                                        onClick={(e) => handleDeleteAgent(e, agent)}
+                                                        title="Excluir Agente"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
                                             </CardDescription>
                                         </CardHeader>
                                         <CardContent>

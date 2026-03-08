@@ -163,6 +163,42 @@ export const processClientMessage = async (params: {
           .eq('id', lead.id);
 
         if (updateErrorKeyword) console.error('Erro ao mover lead para conversão:', updateErrorKeyword);
+        else if (campaign) {
+          // 🆕 CRIAR VENDA NO BANCO DE DADOS
+          const { error: saleError } = await supabase.from('sales').insert({
+            amount: 0,
+            sale_date: new Date().toISOString(),
+            status: 'confirmed',
+            notes: 'Venda detectada via webhook (mensagem de cliente)',
+            lead_id: lead.id,
+            campaign_id: campaign.id
+          });
+          if (saleError) console.error('❌ Erro ao criar venda automática:', saleError);
+          else console.log('✅ Venda criada automaticamente para o lead:', lead.id);
+
+          // 🆕 DISPARAR PURCHASE VIA CAPI
+          if (campaign.conversion_api_enabled && campaign.pixel_id && campaign.facebook_access_token) {
+            try {
+              const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+              const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+              const capiRes = await fetch(`${SUPABASE_URL}/functions/v1/facebook-conversions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY || '' },
+                body: JSON.stringify({
+                  pixelId: campaign.pixel_id,
+                  accessToken: campaign.facebook_access_token,
+                  eventName: 'Purchase',
+                  userData: { phone: realPhoneNumber },
+                  customData: { value: 0, currency: 'BRL', campaign_id: campaign.id, lead_id: lead.id }
+                })
+              });
+              if (capiRes.ok) console.log('✅ Evento Purchase enviado via CAPI');
+              else console.error('❌ Erro da API ao enviar Purchase:', await capiRes.text());
+            } catch (e) {
+              console.error('❌ Exceção ao enviar Purchase via CAPI', e);
+            }
+          }
+        }
       } else if (checkKeywords(cleanedMessage, cancellationKeywords)) {
         console.log(`🚫 Palavra-chave de CANCELAMENTO detectada em: "${cleanedMessage}"`);
         const { error: updateErrorKeyword } = await supabase
@@ -268,6 +304,43 @@ export const processComercialMessage = async (params: {
     if (checkKeywords(messageContent, conversionKeywords)) {
       newStatus = 'converted';
       console.log(`🎉 COMERCIAL: Conversion detected for lead ${lead.id}`);
+
+      if (campaign && lead.status !== 'converted') { // Apenas executa se não estava convertido
+        // 🆕 CRIAR VENDA NO BANCO DE DADOS
+        const { error: saleError } = await supabase.from('sales').insert({
+          amount: 0,
+          sale_date: new Date().toISOString(),
+          status: 'confirmed',
+          notes: 'Venda detectada via webhook (mensagem comercial)',
+          lead_id: lead.id,
+          campaign_id: campaign.id
+        });
+        if (saleError) console.error('❌ Erro ao criar venda automática:', saleError);
+        else console.log('✅ Venda criada automaticamente para o lead:', lead.id);
+
+        // 🆕 DISPARAR PURCHASE VIA CAPI
+        if (campaign.conversion_api_enabled && campaign.pixel_id && campaign.facebook_access_token) {
+          try {
+            const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+            const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+            const capiRes = await fetch(`${SUPABASE_URL}/functions/v1/facebook-conversions`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY || '' },
+              body: JSON.stringify({
+                pixelId: campaign.pixel_id,
+                accessToken: campaign.facebook_access_token,
+                eventName: 'Purchase',
+                userData: { phone: realPhoneNumber },
+                customData: { value: 0, currency: 'BRL', campaign_id: campaign.id, lead_id: lead.id }
+              })
+            });
+            if (capiRes.ok) console.log('✅ Evento Purchase enviado via CAPI');
+            else console.error('❌ Erro da API ao enviar Purchase:', await capiRes.text());
+          } catch (e) {
+            console.error('❌ Exceção ao enviar Purchase via CAPI', e);
+          }
+        }
+      }
     } else if (checkKeywords(messageContent, cancellationKeywords)) {
       newStatus = 'lost';
       console.log(`❌ COMERCIAL: Cancellation detected for lead ${lead.id}`);

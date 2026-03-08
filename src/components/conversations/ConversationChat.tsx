@@ -8,7 +8,7 @@ import { useLeadChat } from '@/hooks/useLeadChat';
 import { formatBrazilianPhone } from '@/lib/phoneUtils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, Loader2, Image as ImageIcon, Video, Volume2, X, Phone, ChevronDown, FileText, Download, Check, CheckCheck, Bot, Sparkles, Info, Settings, Trash2, Power } from 'lucide-react';
+import { Send, MessageCircle, Loader2, Image as ImageIcon, Video, Volume2, X, Phone, ChevronDown, FileText, Download, Check, CheckCheck, Bot, Sparkles, Info, Settings, Trash2 } from 'lucide-react';
 import LeadDetailDialog from '@/components/leads/LeadDetailDialog';
 import { AudioPlayer } from './AudioPlayer';
 import { agentService } from '@/services/agentService';
@@ -24,7 +24,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -239,29 +238,33 @@ export const ConversationChat: React.FC<ConversationChatProps> = ({ lead, onLead
             </p>
           </div>
           {lead.agent_id && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Badge
-                  variant="secondary"
-                  className="ml-2 gap-1 bg-primary/10 text-primary border-primary/20 animate-pulse cursor-pointer hover:bg-primary/20"
-                >
-                  <Sparkles className="h-3 w-3" />
-                  IA Ativa
-                  <ChevronDown className="h-3 w-3 ml-1" />
-                </Badge>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={handleToggleAI} disabled={isUpdatingAI} className="gap-2">
-                  <Power className="h-4 w-4" />
-                  Desativar IA
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleRemoveAgent} disabled={isUpdatingAI} className="gap-2 text-destructive focus:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                  Remover agente
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="ml-2 flex items-center">
+              <Badge
+                variant="secondary"
+                className="gap-1 bg-primary/10 text-primary border-primary/20 animate-pulse cursor-pointer hover:bg-primary/20 rounded-r-none border-r-0"
+                onClick={handleToggleAI}
+                title="Clique para desativar a IA"
+              >
+                <Sparkles className="h-3 w-3" />
+                IA Ativa
+              </Badge>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Badge
+                    variant="secondary"
+                    className="px-1 bg-primary/10 text-primary border-primary/20 cursor-pointer hover:bg-primary/20 rounded-l-none"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </Badge>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={handleRemoveAgent} disabled={isUpdatingAI} className="gap-2 text-destructive focus:text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                    Remover agente
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2">
