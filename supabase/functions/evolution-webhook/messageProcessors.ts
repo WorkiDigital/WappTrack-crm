@@ -223,6 +223,34 @@ export const processClientMessage = async (params: {
         console.log(`✅ Updated lead ${lead.id} with message and incremented unread_count.`);
       }
 
+      // Para áudio recebido: buscar base64 descriptografado via Evolution API
+      let resolvedMediaUrl = messageData?.mediaUrl || null;
+      if (messageData?.mediaType === 'audio' && message.key?.id) {
+        try {
+          const evoBaseUrl = (Deno.env.get('EVOLUTION_API_URL') || 'https://evoapi.workidigital.tech').replace(/\/+$/, '');
+          const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
+          if (evoApiKey) {
+            const b64Res = await fetch(`${evoBaseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': evoApiKey },
+              body: JSON.stringify({ message: { key: message.key, message: message.message } }),
+            });
+            if (b64Res.ok) {
+              const b64Data = await b64Res.json();
+              if (b64Data?.base64) {
+                const mime = b64Data.mimetype || messageData?.mimeType || 'audio/ogg; codecs=opus';
+                resolvedMediaUrl = `data:${mime};base64,${b64Data.base64}`;
+                console.log(`🎵 Áudio base64 resolvido para lead ${lead.id}`);
+              }
+            } else {
+              console.warn(`⚠️ getBase64FromMediaMessage falhou (${b64Res.status}), usando CDN URL`);
+            }
+          }
+        } catch (audioErr) {
+          console.warn('⚠️ Erro ao buscar base64 do áudio, usando CDN URL:', audioErr);
+        }
+      }
+
       // Salvar mensagem no histórico de chat (incluindo mídias com fallback defensivo)
       const messagePayload = {
         lead_id: lead.id,
@@ -230,7 +258,7 @@ export const processClientMessage = async (params: {
         is_from_me: false,
         whatsapp_message_id: message.key?.id,
         instance_name: instanceName,
-        media_url: messageData?.mediaUrl,
+        media_url: resolvedMediaUrl,
         media_type: messageData?.mediaType,
         mime_type: messageData?.mimeType,
         file_name: messageData?.fileName,
