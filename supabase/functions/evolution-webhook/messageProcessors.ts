@@ -227,27 +227,45 @@ export const processClientMessage = async (params: {
       let resolvedMediaUrl = messageData?.mediaUrl || null;
       if (messageData?.mediaType === 'audio' && message.key?.id) {
         try {
-          const evoBaseUrl = (Deno.env.get('EVOLUTION_API_URL') || 'https://evoapi.workidigital.tech').replace(/\/+$/, '');
           const evoApiKey = Deno.env.get('EVOLUTION_API_KEY');
           if (evoApiKey) {
+            // Buscar base_url da instância no banco (igual ao evolution-send-message)
+            const { data: instanceData } = await supabase
+              .from('whatsapp_instances')
+              .select('base_url')
+              .eq('instance_name', instanceName)
+              .single();
+            const rawBase = Deno.env.get('EVOLUTION_API_URL') || instanceData?.base_url || 'https://evoapi.workidigital.tech';
+            const evoBaseUrl = rawBase.replace(/\/+$/, '').replace('evolutionapi.workidigital.tech', 'evoapi.workidigital.tech');
+
+            console.log(`🎵 Buscando base64 de áudio em: ${evoBaseUrl}/chat/getBase64FromMediaMessage/${instanceName}`);
+
             const b64Res = await fetch(`${evoBaseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'apikey': evoApiKey },
-              body: JSON.stringify({ message: { key: message.key, message: message.message } }),
+              body: JSON.stringify({ message: message, convertToMp4: false }),
             });
+
+            const responseText = await b64Res.text();
+            console.log(`🎵 Resposta getBase64 (${b64Res.status}):`, responseText.slice(0, 200));
+
             if (b64Res.ok) {
-              const b64Data = await b64Res.json();
+              const b64Data = JSON.parse(responseText);
               if (b64Data?.base64) {
                 const mime = b64Data.mimetype || messageData?.mimeType || 'audio/ogg; codecs=opus';
                 resolvedMediaUrl = `data:${mime};base64,${b64Data.base64}`;
-                console.log(`🎵 Áudio base64 resolvido para lead ${lead.id}`);
+                console.log(`✅ Áudio base64 resolvido para lead ${lead.id} (${resolvedMediaUrl.length} chars)`);
+              } else {
+                console.warn('⚠️ getBase64 retornou sem campo base64:', responseText.slice(0, 300));
               }
             } else {
-              console.warn(`⚠️ getBase64FromMediaMessage falhou (${b64Res.status}), usando CDN URL`);
+              console.warn(`⚠️ getBase64FromMediaMessage falhou (${b64Res.status}): ${responseText.slice(0, 300)}`);
             }
+          } else {
+            console.warn('⚠️ EVOLUTION_API_KEY não configurada, áudio não pode ser decodificado');
           }
         } catch (audioErr) {
-          console.warn('⚠️ Erro ao buscar base64 do áudio, usando CDN URL:', audioErr);
+          console.warn('⚠️ Erro ao buscar base64 do áudio:', audioErr);
         }
       }
 
