@@ -103,7 +103,7 @@ serve(async (req) => {
       webhook: {
         url: webhookUrl,
         webhook_by_events: false,
-        webhook_base64: false,
+        webhook_base64: true,
         events: [
           "QRCODE_UPDATED",
           "MESSAGES_UPSERT",
